@@ -233,13 +233,9 @@ pool_v3 <- data.frame(
 )
 
 plot_ly(pool_v3, x = ~btc) %>% 
-  add_trace(y = ~eth, mode = 'lines', type = 'scatter', name = 'Constant Product') %>% 
-  add_trace(x =~pool$btc, y = ~pool$eth, mode = 'lines') %>%
-  add_trace(x = ~100, y = ~1000, type = 'scatter', mode = 'markers', name = 'Current Price') %>% 
-  layout(title = "\n Close up of Constant Product Curve around 100 BTC",
-         annotations = list(x = 105, y = 1050,
-                            text = 'Current Price',
-                            showarrow = FALSE))
+  add_trace(y = ~eth, mode = 'lines', type = 'scatter', name = 'Real Reserve', line = list(color = 'orange')) %>% 
+  add_trace(x =~pool$btc, y = ~pool$eth, name = 'Virtual Reserve', mode = 'lines', line = list(color = 'blue')) %>% 
+  layout(title = "Virtual vs Real Reserves for ETH/BTC 0.036 - 0.196")
 ```
 
 
