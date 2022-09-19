@@ -1,0 +1,185 @@
+---
+title: "Uniswap Conceptually"
+author: "Carlos Mercado"
+date: "`r Sys.Date()`"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+# Intro
+
+Uniswap v2 is an automatic market maker that pools deposits of 2 tokens, here we will assume Ether (ETH) and wrapped Bitcoin (wBTC), and allows anyone to autonomously trade between the assets using that pool by paying a fee, e.g., 0.3%.
+
+To do this, it takes both extreme relative prices:
+
+-   1 ETH = 0 BTC
+-   1 ETH = Infinite BTC
+
+And uses a constant product function `x * y = k` to calculate how much of token x to provide to traders looking to offload token y. Note this is separate from the 0.3% fee. All trades, but especially large trades, *impact the relative price* of the tokens when trading, this is called price impact.
+
+# Simulated WBTC-ETH Uniswap v2 Pool
+
+For example, assume the current price of 1 ETH is 0.1 WBTC and that a liquidity pool exists with 1,000 ETH and 100 WBTC. This means the constant product `k = 1000*100 = 100,000`
+
+Any trade is allowable as long as the resulting balance of X ETH and Y WBTC remains 100,000. Notice how US Dollar prices are not relevant. It is only the constant product enforcing relative prices that matters.
+
+```{r}
+options(scipen = 99)
+library(dplyr)
+library(plotly)
+library(reactable)
+
+kfunc <- function(x, k = 100000){
+  # returns y for an x that meets condition x*y = k
+  k/x
+}
+
+# draws plot and returns values 
+x <- curve(kfunc, 0, 1000, n = 1001, xlab = 'BTC', ylab = 'ETH')
+
+pool <- data.frame(
+  btc = x$x,
+  eth = x$y
+)
+
+# for simplicity focus in on 100 BTC range
+relevant_pool <- pool[50:150, ]
+
+plot_ly(relevant_pool, x = ~btc) %>% 
+  add_trace(y = ~eth, mode = 'lines', type = 'scatter', name = 'Constant Product') %>% 
+  add_trace(x = ~100, y = ~1000, type = 'scatter', mode = 'markers', name = 'Current Price') %>% 
+  layout(title = "\n Close up of Constant Product Curve around 100 BTC",
+         annotations = list(x = 105, y = 1050,
+                            text = 'Current Price',
+                            showarrow = FALSE))
+  
+
+price_snippet <- pool[96:106, ]
+price_snippet$btc_delta <- price_snippet$btc - 100
+price_snippet$eth_delta <- price_snippet$eth - 1000
+price_snippet <- price_snippet %>% round(4) # 4 decimals
+```
+
+The orange point denotes the current (relative) price 1 ETH = 0.1 BTC, or more specifically 100 BTC = 1,000 ETH. But to *trade* with the pool *causes* a change in the price.
+
+Reviewing the table form of the 95 - 105 BTC range where k = 100,000 shows the price point of several potential trades.
+
+```{r}
+reactable(price_snippet, defaultPageSize = 25)
+```
+
+If you have 1 BTC and want ETH you would change the pool balance from:
+
+-   100 BTC and 1000 ETH
+
+to
+
+-   101 BTC and 990.099 ETH
+
+Meaning that although the price *was* 0.1 BTC per ETH originally. You actually only get `r 1000 - 990.099` ETH for your 1 BTC (would be less after any fee, e.g., 0.3%). This is the *price impact* mentioned previously. Instead of 0.1 BTC per ETH, you pay 0.10099 BTC per ETH. a **0.99%** price impact.
+
+In the other direction if you want 5 BTC you would need to provide 52.6316 ETH to change the pool's composition to 95 BTC (and 1,052.6316 ETH). Instead of 0.1 BTC per ETH, you only get 0.09499 BTC per ETH. A **5.01%** price impact.
+
+The larger the trade (5 BTC instead of 1 BTC) the worse the price impact.
+
+The solution to this is to widen the curve by deepening the liquidity available. If instead the pool was 10,000 BTC and 100,000 ETH, trades of 1 BTC or even 5 BTC would be much closer to 0.1 BTC per ETH (it would not be exact because price impact still occurs).
+
+# Real World WBTC-ETH Uniswap v2 Pool
+
+Looking at the [Uniswap v2 ETH/WBTC pool](https://v2.info.uniswap.org/pair/0xbb2b8038a1640196fbe3e38816f3e67cba72d940%3E) analytics page.
+
+![Example Screenshot from 2022-09-18](v2_wbtc_eth_screenshot.png){width="200"}
+
+245.7565 WBTC and 3,532 ETH are in this pool. This is a relative price of 0.06957 BTC per ETH. Bitcoin is doing better against ETH than in the fake example above.
+
+The constant product `k = 245.7565 * 3532 = 868,012`. This makes the real pool significantly more *deep* than in the fake intro example. So price impacts should be much smaller!
+
+The constant product curve for the real pool is here:
+
+```{r}
+
+x_real <- curve(kfunc(x, k = 868012), 200, 300, n = 100000, xlab = 'BTC', ylab = 'ETH')
+
+pool_real <- data.frame(
+  btc = x_real$x,
+  eth = x_real$y
+)
+
+# for simplicity focus in on 100 BTC range
+
+plot_ly(pool_real, x = ~btc) %>% 
+  add_trace(y = ~eth, mode = 'lines', type = 'scatter', name = 'Constant Product') %>% 
+  add_trace(x = ~245.7565, y = ~3532, type = 'scatter', mode = 'markers', name = 'Current Price') %>% 
+  layout(title = "\n Close up of Constant Product Curve around 245 BTC",
+         annotations = list(x = 250, y = 3580,
+                            text = 'Current Price',
+                            showarrow = FALSE))
+```
+
+Unlike before, because this pool is deeper a move of 1 BTC is much more easily absorbed.
+
+```{r}
+one_increments <- pool_real[seq(from = 40757, 50757, by = 1000), ]
+
+one_increments$btc_delta <- one_increments$btc - 245.7565
+one_increments$eth_delta <- one_increments$eth - 3532
+one_increments <- one_increments %>% round(4) # 4 decimals
+reactable(one_increments)
+```
+
+Selling 1 BTC to force the pool from 245.7565 to 246.7565 would remove 14.3131 ETH form the pool. This `r 1/14.3131` BTC per ETH is very close to the original relative price of 0.06957 BTC per ETH, only a **0.42%** price impact.
+
+In the other direction if you want 5 BTC you would need to provide 73.3537 ETH. This `r 5/73.3537` BTC per ETH a **2.02%** price impact.
+
+## Real World Uniswap v2 Confirmation
+
+The 245.7565 WBTC; 3,532 ETH V2 Pool was as of Block 15,562,988. [This transaction](https://etherscan.io/tx/0x1f23e1feb1def28e5b5c7c4800dc66ff8338e114657593d08d9c6891471806d5) shows a trade of 1.3159 ETH for 0.0913 BTC in that block.
+
+The constant product math with `k = 868,012` including the 0.3% fee would expect the following result:
+
+`( 3532 - (1.3159*0.997) ) * (245.7565 + x) = 868,012`
+
+Where the expected 0.0913 matches the transaction.
+
+x = `round(868012/(3532 - 1.3159*0.997) - 245.7565, 4)`
+
+x = `r round(868012/(3532 - 1.3159*0.997) - 245.7565, 4)`
+
+Rounding, in addition to the possibility of *other trades* happening in the same block before this transaction (blocks are comprised on transactions and transactions within a block go in order) affecting the pool could lead to small differences in the expected and actual results. But our calculation and the real world matched to 4 significant digits.
+
+# Simulated WBTC-ETH Uniswap v3 Pool
+
+Uniswap v3 introduces *concentrated liquidity*. Instead of 1 pool covering all the extreme price ranges:
+
+-   1 ETH = 0 BTC
+-   1 ETH = Infinite BTC
+
+Users individually provide target ranges, e.g.,
+
+- Minimum Price: 1 ETH = 0.05 BTC (1 ETH *only* gets 0.05 BTC)
+- Maximum Price: 1 ETH = 0.2 BTC (1 ETH gets 4 times as much: 0.20 BTC)
+
+It can be tricky to think about these as minimums and maximums. It may help to recall that Automated Market Makers sell winners to buy losers and charge a fee for doing so. So as ETH rises in value (1 ETH buys more BTC) the liquidity pool, given a constant product, becomes disproportionately full of BTC instead of ETH.
+
+In the extreme case, if the 100 BTC 1,000 ETH Liquidity Pool with 1 ETH = 0.1 BTC price mentioned above shifted to 1 ETH = 10 BTC, the pool would have to flip to 1,000 BTC and 100 ETH. The BTC comes from sellers of BTC who buy ETH: forcing the pool's balance to change (because of constant product). 
+
+In Uniswap v3, The entire 0 to Infinite range is broken up into 0.01% increments (i.e., there is a 
+bucket of 1 ETH = 0.0688 BTC next to 1 ETH = 0.0689 BTC, next to 1 ETH = 0.0690 BTC).
+
+Liquidity providers choose their range (e.g., 1 ETH = 0.05 BTC to 1 ETH = 0.20 BTC) and spread their 
+tokens across the 0.01% buckets. 
+
+Each bucket of 0.01% range has liquidity from multiple providers stacked into it. As trades occur price impact happens
+using the same x*y = k formula, where buckets are exhausted of liquidity as price impact moves pushes the relative
+prices into other buckets.
+
+When someone is out of range (e.g., if 1 ETH = 0.049 BTC) their position is 100% in the lower value asset (they sold 
+all their winners to buy the trader's losers).
+
+
+
+
+
+
+
