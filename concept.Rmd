@@ -32,8 +32,10 @@ library(reactable)
 
 kfunc <- function(x, k = 100000){
   # returns y for an x that meets condition x*y = k
-  k/x
+ y = k/x
+ return(y)
 }
+
 
 # draws plot and returns values 
 x <- curve(kfunc, 0, 1000, n = 1001, xlab = 'BTC', ylab = 'ETH')
@@ -174,11 +176,71 @@ Each bucket of 0.01% range has liquidity from multiple providers stacked into it
 using the same x*y = k formula, where buckets are exhausted of liquidity as price impact moves pushes the relative
 prices into other buckets.
 
-When someone is out of range (e.g., if 1 ETH = 0.049 BTC) their position is 100% in the lower value asset (they sold 
-all their winners to buy the trader's losers).
+When someone is out of range (e.g., if 1 ETH = 0.049 BTC) their position is 100% in the lower value asset (they sold all their winners to buy the trader's losers).
+
+Recall the Simulated 100 BTC; 1000 ETH liquidity pool from before but this time focused
+on the range of 60 BTC to 140 BTC.
+
+```{r}
+
+plot_ly(relevant_pool, x = ~btc) %>% 
+  add_trace(y = ~eth, mode = 'lines', type = 'scatter', name = 'Constant Product') %>% 
+  add_trace(x = ~100, y = ~1000, type = 'scatter', mode = 'markers', name = 'Current Price') %>% 
+  layout(title = "\n Close up of Constant Product Curve around 100 BTC",
+         annotations = list(x = 105, y = 1050,
+                            text = 'Current Price',
+                            showarrow = FALSE)) %>% 
+  layout(
+    xaxis = list(
+      range=c(60,140)
+    )
+  )
+
+```
 
 
+```{r}
+# Imagine a single liquidity provider in the range {pa, pb}
 
+# Something is wrong here - is it real reserves transposed to pa/pb and 
+# not the reverse? is pb the "virtual" price not the real minimum?
+
+# min btc / eth 
+ # 1 ETH = 0.036 BTC
+pb =  60 / 1666.6666
+
+# max btc / eth 
+ # 1 ETH = 0.196 BTC 
+pa = 140 / 714.2857
+
+
+kv3_func <- function(x, pa = pa, pb = pb, k = 100000){
+  # returns y for an x that meets condition
+  # (x + sqrt(k/pb))*(y+sqrt(k*pa)) = k
+  
+  y = ( k/(x+sqrt(k/pb)) - sqrt(k*pa)  )
+ 
+ return(y)
+}
+
+
+# draws plot and returns values 
+x_v3 <- curve(kv3_func(x = x, pa = pa^-1, pb = pb^-1), 0,1000, n = 1001, xlab = 'BTC', ylab = 'ETH')
+
+pool_v3 <- data.frame(
+  btc = x_v3$x,
+  eth = x_v3$y
+)
+
+plot_ly(pool_v3, x = ~btc) %>% 
+  add_trace(y = ~eth, mode = 'lines', type = 'scatter', name = 'Constant Product') %>% 
+  add_trace(x =~pool$btc, y = ~pool$eth, mode = 'lines') %>%
+  add_trace(x = ~100, y = ~1000, type = 'scatter', mode = 'markers', name = 'Current Price') %>% 
+  layout(title = "\n Close up of Constant Product Curve around 100 BTC",
+         annotations = list(x = 105, y = 1050,
+                            text = 'Current Price',
+                            showarrow = FALSE))
+```
 
 
 
