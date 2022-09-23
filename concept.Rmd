@@ -2,7 +2,9 @@
 title: "Uniswap Conceptually"
 author: "Carlos Mercado"
 date: "`r Sys.Date()`"
-output: html_document
+output:
+  html_document:
+    code_folding: hide
 editor_options: 
   chunk_output_type: console
 ---
@@ -24,7 +26,7 @@ For example, assume the current price of 1 ETH is 0.1 WBTC and that a liquidity 
 
 Any trade is allowable as long as the resulting balance of X ETH and Y WBTC remains 100,000. Notice how US Dollar prices are not relevant. It is only the constant product enforcing relative prices that matters.
 
-```{r}
+```{r, warning=FALSE, message=FALSE}
 options(scipen = 99)
 library(dplyr)
 library(plotly)
@@ -51,7 +53,7 @@ relevant_pool <- pool[50:180, ]
 plot_ly(relevant_pool, x = ~btc) %>% 
   add_trace(y = ~eth, mode = 'lines', type = 'scatter', name = 'Constant Product') %>% 
   add_trace(x = ~100, y = ~1000, type = 'scatter', mode = 'markers', name = 'Current Price') %>% 
-  layout(title = "\n Close up of Constant Product Curve around 100 BTC",
+  layout(title = "Close up of Constant Product Curve around 100 BTC",
          annotations = list(x = 105, y = 1100,
                             text = 'Current Price',
                             showarrow = FALSE))
@@ -68,7 +70,7 @@ The orange point denotes the current (relative) price 1 ETH = 0.1 BTC, or more s
 Reviewing the table form of the 95 - 105 BTC range where k = 100,000 shows the price point of several potential trades.
 
 ```{r}
-reactable(price_snippet, defaultPageSize = 25)
+reactable(price_snippet %>% round(3), defaultPageSize = 25)
 ```
 
 If you have 1 BTC and want ETH you would change the pool balance from:
@@ -113,8 +115,8 @@ pool_real <- data.frame(
 plot_ly(pool_real, x = ~btc) %>% 
   add_trace(y = ~eth, mode = 'lines', type = 'scatter', name = 'Constant Product') %>% 
   add_trace(x = ~245.7565, y = ~3532, type = 'scatter', mode = 'markers', name = 'Current Price') %>% 
-  layout(title = "\n Close up of Constant Product Curve around 245 BTC",
-         annotations = list(x = 250, y = 3580,
+  layout(title = "Close up of Constant Product Curve around 245 BTC",
+         annotations = list(x = 255, y = 3590,
                             text = 'Current Price',
                             showarrow = FALSE))
 ```
@@ -126,7 +128,7 @@ one_increments <- pool_real[seq(from = 40757, 50757, by = 1000), ]
 
 one_increments$btc_delta <- one_increments$btc - 245.7565
 one_increments$eth_delta <- one_increments$eth - 3532
-one_increments <- one_increments %>% round(4) # 4 decimals
+one_increments <- one_increments %>% round(2) # 3 decimals
 reactable(one_increments)
 ```
 
@@ -166,19 +168,19 @@ It can be tricky to think about these as minimums and maximums. It may help to r
 
 In the extreme case, if the 100 BTC 1,000 ETH Liquidity Pool with 1 ETH = 0.1 BTC price mentioned above shifted to 1 ETH = 10 BTC, the pool would have to flip to 1,000 BTC and 100 ETH. The BTC comes from sellers of BTC who buy ETH: forcing the pool's balance to change (because of constant product). 
 
-In Uniswap v3, The entire 0 to Infinite range is broken up into 0.01% increments (i.e., there is a 
-bucket of 1 ETH = 0.0688 BTC next to 1 ETH = 0.0689 BTC, next to 1 ETH = 0.0690 BTC).
+In Uniswap v3, The entire 0 to Infinite range is broken up into ticks, spaced logarithmically such
+that each tick price is 0.01% larger than the previous tick.
 
-Liquidity providers choose their range (e.g., 1 ETH = 0.05 BTC to 1 ETH = 0.25 BTC) and spread their tokens across the 0.01% buckets. 
+Liquidity providers choose their range (e.g., 1 ETH = 0.05 BTC to 1 ETH = 0.25 BTC) and spread their tokens across the ticks. 
 
-Each bucket of 0.01% range has liquidity from multiple providers stacked into it. As trades occur price impact happens using the same x*y = k formula, where buckets are exhausted of liquidity as price impact moves pushes the relative prices into other buckets.
+These ticks act like 'buckets' of liquidity pooled from multiple providers. As trades occur, price impact happens using the same x*y = k formula within a ticket. Ticks become exhausted of liquidity as price impact moves pushes the relative prices into other buckets of liquidity (i.e., across ticks).
 
 When someone is out of range (e.g., if 1 ETH = 0.049 BTC) their position is 100% in the lower value asset (they sold all their winners to buy the trader's losers with the hope their share of fees makes up for the loss).
 
 Recall the Simulated 100 BTC; 1000 ETH liquidity pool from before but this time with two
 prices on the range noted: 1 ETH = 0.05 BTC and 1 ETH = 0.25 BTC.
 
-```{r}
+```{r, warning=FALSE, message=FALSE}
 
 p_func <- function(k = 100000, p = 0.05){
   # x * y = k
@@ -227,9 +229,9 @@ point your position is 100% ETH. Getting 4 ETH for 1 BTC means ETH is high. At t
 your position is 100% BTC.
 
 
-```{r}
+```{r,  warning=FALSE, message=FALSE}
 
-l_func <- function(k = 100000, pb, pa, x){
+l_func <- function(k = 100000, pb = 20, pa = 4, x){
   #' l = sqrt(k)
   #' (x + l/sqrt(pb)) (y + l*sqrt(pa)) = l^2
   #' (x + f1) * (y + f2) = k
@@ -240,6 +242,16 @@ l_func <- function(k = 100000, pb, pa, x){
   y = (k - f1*f2 - f2*x) / (x + f1)
   
 return(y)
+}
+
+get_price <- function(k = 100000, pb = 20, pa = 4, x){
+   l = sqrt(k)
+  f1 = l/sqrt(pb)
+  f2 = l*sqrt(pa)
+  
+  y = (k - f1*f2 - f2*x) / (x + f1)
+  
+  return(y/x)
 }
 
 concentrated <- curve(l_func(k = 100000, pb = 20, pa = 4, x = x), from = 0, 100, n = 10000)
@@ -257,6 +269,10 @@ plot_ly(conc_pool, x = ~btc) %>%
   add_trace(y = ~eth, mode = 'lines', type = 'scatter',
             name = 'Real Reserve', line = list(color = 'orange')) %>% 
   add_trace(x =~pool$btc, y = ~pool$eth, name = 'Virtual Reserve', mode = 'lines', line = list(color = 'blue')) %>% 
+  add_trace(x = ~33, y = ~333, name = 'Real 0.1 BTC/ETH', mode = 'markers') %>% 
+  add_trace(x = ~100, y = ~1000, name = 'Virtual 0.1 BTC/ETH', mode = 'markers') %>% 
+  add_trace(x = ~low$x, y = ~low$y, mode = 'markers', name = '1 ETH = 0.05 WBTC') %>%
+  add_trace(x = ~high$x, y = ~high$y, mode = 'markers', name = '1 ETH = 0.25 WBTC') %>%
   layout(title = "Virtual vs Real Reserves for BTC/ETH 0.05 - 0.25",
          xaxis = list(
            range = c(0, 200)
@@ -267,14 +283,18 @@ plot_ly(conc_pool, x = ~btc) %>%
 
 ```
 
-Showing this concentrated range offers the same price impacts as the larger pool 
-(i.e., the same relevant liquidity).
+In the Uniswap v2 pool, prices change smoothly following standard x*y = k math described above.
+In Uniswap v3, concentrated liquidity creates *real reserves* (yellow) that act as the virtual reserves
+within the price boundaries (the two outer dots of the virtual reserve line).
 
-```{r}
-subconc <- conc_pool %>% filter(ethbtc > 9 & ethbtc < 11)
-subpool <- pool %>% filter(ethbtc > 9 & ethbtc < 11)
+Instead of providing liquidity from 0 to Inf; a liquidity provider bounded between 0.05 and 0.25 
+concentrates their liquidity, accepting that *outside their range* they are 100 % in a single asset.
 
-```
+
+
+
+
+
 
 
 
