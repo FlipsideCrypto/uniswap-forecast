@@ -46,13 +46,13 @@ pool <- data.frame(
 )
 
 # for simplicity focus in on 100 BTC range
-relevant_pool <- pool[50:150, ]
+relevant_pool <- pool[50:180, ]
 
 plot_ly(relevant_pool, x = ~btc) %>% 
   add_trace(y = ~eth, mode = 'lines', type = 'scatter', name = 'Constant Product') %>% 
   add_trace(x = ~100, y = ~1000, type = 'scatter', mode = 'markers', name = 'Current Price') %>% 
   layout(title = "\n Close up of Constant Product Curve around 100 BTC",
-         annotations = list(x = 105, y = 1050,
+         annotations = list(x = 105, y = 1100,
                             text = 'Current Price',
                             showarrow = FALSE))
   
@@ -160,7 +160,7 @@ Uniswap v3 introduces *concentrated liquidity*. Instead of 1 pool covering all t
 Users individually provide target ranges, e.g.,
 
 - Minimum Price: 1 ETH = 0.05 BTC (1 ETH *only* gets 0.05 BTC)
-- Maximum Price: 1 ETH = 0.2 BTC (1 ETH gets 4 times as much: 0.20 BTC)
+- Maximum Price: 1 ETH = 0.25 BTC (1 ETH gets 5 times as much: 0.25 BTC)
 
 It can be tricky to think about these as minimums and maximums. It may help to recall that Automated Market Makers sell winners to buy losers and charge a fee for doing so. So as ETH rises in value (1 ETH buys more BTC) the liquidity pool, given a constant product, becomes disproportionately full of BTC instead of ETH.
 
@@ -169,75 +169,112 @@ In the extreme case, if the 100 BTC 1,000 ETH Liquidity Pool with 1 ETH = 0.1 BT
 In Uniswap v3, The entire 0 to Infinite range is broken up into 0.01% increments (i.e., there is a 
 bucket of 1 ETH = 0.0688 BTC next to 1 ETH = 0.0689 BTC, next to 1 ETH = 0.0690 BTC).
 
-Liquidity providers choose their range (e.g., 1 ETH = 0.05 BTC to 1 ETH = 0.20 BTC) and spread their 
-tokens across the 0.01% buckets. 
+Liquidity providers choose their range (e.g., 1 ETH = 0.05 BTC to 1 ETH = 0.25 BTC) and spread their tokens across the 0.01% buckets. 
 
-Each bucket of 0.01% range has liquidity from multiple providers stacked into it. As trades occur price impact happens
-using the same x*y = k formula, where buckets are exhausted of liquidity as price impact moves pushes the relative
-prices into other buckets.
+Each bucket of 0.01% range has liquidity from multiple providers stacked into it. As trades occur price impact happens using the same x*y = k formula, where buckets are exhausted of liquidity as price impact moves pushes the relative prices into other buckets.
 
-When someone is out of range (e.g., if 1 ETH = 0.049 BTC) their position is 100% in the lower value asset (they sold all their winners to buy the trader's losers).
+When someone is out of range (e.g., if 1 ETH = 0.049 BTC) their position is 100% in the lower value asset (they sold all their winners to buy the trader's losers with the hope their share of fees makes up for the loss).
 
-Recall the Simulated 100 BTC; 1000 ETH liquidity pool from before but this time focused
-on the range of 60 BTC to 140 BTC.
+Recall the Simulated 100 BTC; 1000 ETH liquidity pool from before but this time with two
+prices on the range noted: 1 ETH = 0.05 BTC and 1 ETH = 0.25 BTC.
 
 ```{r}
 
+p_func <- function(k = 100000, p = 0.05){
+  # x * y = k
+  # p = x/y
+  # x = py
+  # py * y = k
+  # y = sqrt(k/p)
+  # x = py
+  
+  y = sqrt(k/p)
+  x = p*y
+  
+  return(
+    list(x = x, y = y)
+  )
+}
+
+low = p_func(k = 100000, p = 0.05)
+high = p_func(k = 100000, p = 0.25)
+
 plot_ly(relevant_pool, x = ~btc) %>% 
   add_trace(y = ~eth, mode = 'lines', type = 'scatter', name = 'Constant Product') %>% 
+  add_trace(x = ~low$x, y = ~low$y, mode = 'markers', name = '1 ETH = 0.05 WBTC') %>%
+  add_trace(x = ~high$x, y = ~high$y, mode = 'markers', name = '1 ETH = 0.25 WBTC') %>%
   add_trace(x = ~100, y = ~1000, type = 'scatter', mode = 'markers', name = 'Current Price') %>% 
-  layout(title = "\n Close up of Constant Product Curve around 100 BTC",
-         annotations = list(x = 105, y = 1050,
+  layout(title = "\n Constant Product with Ranges",
+         annotations = list(x = 115, y = 1050,
                             text = 'Current Price',
                             showarrow = FALSE)) %>% 
   layout(
     xaxis = list(
-      range=c(60,140)
+      range=c(0,180)
     )
   )
 
 ```
 
+Imagine a single liquidity provider wanted to provide *the same liquidity* but with fewer
+tokens. They could concentrate their liquidity between 0.05 and 0.25 BTC/ETH.
+
+Note: Using Uniswap v3 White Paper format where the unit of account is Y (here, ETH)
+pb = ETH/BTC at the low tick (low for ETH) and pa = ETH/BTC at the high tick (high for ETH). So for this function we inverse 0.05 to 20 and .25 to 4 to state how many ETH you get for 1 BTC. 
+
+Getting 20 ETH for 1 BTC means ETH is low. This is useful to think about because at this 
+point your position is 100% ETH. Getting 4 ETH for 1 BTC means ETH is high. At this point
+your position is 100% BTC.
+
 
 ```{r}
-# Imagine a single liquidity provider in the range {pa, pb}
 
-# Something is wrong here - is it real reserves transposed to pa/pb and 
-# not the reverse? is pb the "virtual" price not the real minimum?
-
-# min btc / eth 
- # 1 ETH = 0.036 BTC
-pb =  60 / 1666.6666
-
-# max btc / eth 
- # 1 ETH = 0.196 BTC 
-pa = 140 / 714.2857
-
-
-kv3_func <- function(x, pa = pa, pb = pb, k = 100000){
-  # returns y for an x that meets condition
-  # (x + sqrt(k/pb))*(y+sqrt(k*pa)) = k
+l_func <- function(k = 100000, pb, pa, x){
+  #' l = sqrt(k)
+  #' (x + l/sqrt(pb)) (y + l*sqrt(pa)) = l^2
+  #' (x + f1) * (y + f2) = k
+  l = sqrt(k)
+  f1 = l/sqrt(pb)
+  f2 = l*sqrt(pa)
   
-  y = ( k/(x+sqrt(k/pb)) - sqrt(k*pa)  )
- 
- return(y)
+  y = (k - f1*f2 - f2*x) / (x + f1)
+  
+return(y)
 }
 
-
-# draws plot and returns values 
-x_v3 <- curve(kv3_func(x = x, pa = pa^-1, pb = pb^-1), 0,1000, n = 1001, xlab = 'BTC', ylab = 'ETH')
-
-pool_v3 <- data.frame(
-  btc = x_v3$x,
-  eth = x_v3$y
+concentrated <- curve(l_func(k = 100000, pb = 20, pa = 4, x = x), from = 0, 100, n = 10000)
+conc_pool <- data.frame(
+  btc = concentrated$x,
+  eth = concentrated$y
 )
 
-plot_ly(pool_v3, x = ~btc) %>% 
-  add_trace(y = ~eth, mode = 'lines', type = 'scatter', name = 'Real Reserve', line = list(color = 'orange')) %>% 
+# negative values don't make sense 
+conc_pool <- conc_pool %>% dplyr::filter(btc >= 0, eth >= 0)
+conc_pool$ethbtc <- conc_pool$eth/conc_pool$btc
+pool$ethbtc <- pool$eth/pool$btc
+
+plot_ly(conc_pool, x = ~btc) %>% 
+  add_trace(y = ~eth, mode = 'lines', type = 'scatter',
+            name = 'Real Reserve', line = list(color = 'orange')) %>% 
   add_trace(x =~pool$btc, y = ~pool$eth, name = 'Virtual Reserve', mode = 'lines', line = list(color = 'blue')) %>% 
-  layout(title = "Virtual vs Real Reserves for ETH/BTC 0.036 - 0.196")
+  layout(title = "Virtual vs Real Reserves for BTC/ETH 0.05 - 0.25",
+         xaxis = list(
+           range = c(0, 200)
+         ),
+         yaxis = list(
+           range = c(0, 2000)
+         ))
+
 ```
 
+Showing this concentrated range offers the same price impacts as the larger pool 
+(i.e., the same relevant liquidity).
+
+```{r}
+subconc <- conc_pool %>% filter(ethbtc > 9 & ethbtc < 11)
+subpool <- pool %>% filter(ethbtc > 9 & ethbtc < 11)
+
+```
 
 
 
