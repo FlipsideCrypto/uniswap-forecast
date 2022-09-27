@@ -26,8 +26,8 @@ For example, assume the current price of 1 ETH is 0.1 WBTC and that a liquidity 
 
 Any trade is allowable as long as the resulting balance of X ETH and Y WBTC remains 100,000. Notice how US Dollar prices are not relevant. It is only the constant product enforcing relative prices that matters.
 
-```{r, warning=FALSE, message=FALSE}
-options(scipen = 99)
+```{r, warning=FALSE, message=FALSE, fig.show='hide'}
+options(scipen = 20)
 library(dplyr)
 library(plotly)
 library(reactable)
@@ -40,8 +40,11 @@ kfunc <- function(x, k = 100000){
 
 
 # draws plot and returns values 
+# This plots by default: suppressing this to only get data.
 x <- curve(kfunc, 0, 1000, n = 1001, xlab = 'BTC', ylab = 'ETH')
+```
 
+```{r,  warning=FALSE, message=FALSE}
 pool <- data.frame(
   btc = x$x,
   eth = x$y
@@ -58,18 +61,18 @@ plot_ly(relevant_pool, x = ~btc) %>%
                             text = 'Current Price',
                             showarrow = FALSE))
   
-
-price_snippet <- pool[96:106, ]
-price_snippet$btc_delta <- price_snippet$btc - 100
-price_snippet$eth_delta <- price_snippet$eth - 1000
-price_snippet <- price_snippet %>% round(4) # 4 decimals
 ```
 
 The orange point denotes the current (relative) price 1 ETH = 0.1 BTC, or more specifically 100 BTC = 1,000 ETH. But to *trade* with the pool *causes* a change in the price.
 
 Reviewing the table form of the 95 - 105 BTC range where k = 100,000 shows the price point of several potential trades.
 
-```{r}
+```{r,  warning=FALSE, message=FALSE}
+price_snippet <- pool[96:106, ]
+price_snippet$btc_delta <- price_snippet$btc - 100
+price_snippet$eth_delta <- price_snippet$eth - 1000
+price_snippet <- price_snippet %>% round(4) # 4 decimals
+
 reactable(price_snippet %>% round(3), defaultPageSize = 25)
 ```
 
@@ -101,16 +104,17 @@ The constant product `k = 245.7565 * 3532 = 868,012`. This makes the real pool s
 
 The constant product curve for the real pool is here:
 
-```{r}
+```{r, fig.show='hide'}
 
-x_real <- curve(kfunc(x, k = 868012), 200, 300, n = 100000, xlab = 'BTC', ylab = 'ETH')
+x_real <- curve(kfunc(x, k = 868012), 200, 300, n = 100000, xlab = 'BTC', ylab = 'ETH', add = FALSE)
 
+```
+
+```{r,  warning=FALSE, message=FALSE}
 pool_real <- data.frame(
   btc = x_real$x,
   eth = x_real$y
 )
-
-# for simplicity focus in on 100 BTC range
 
 plot_ly(pool_real, x = ~btc) %>% 
   add_trace(y = ~eth, mode = 'lines', type = 'scatter', name = 'Constant Product') %>% 
@@ -123,7 +127,7 @@ plot_ly(pool_real, x = ~btc) %>%
 
 Unlike before, because this pool is deeper a move of 1 BTC is much more easily absorbed.
 
-```{r}
+```{r,  warning=FALSE, message=FALSE}
 one_increments <- pool_real[seq(from = 40757, 50757, by = 1000), ]
 
 one_increments$btc_delta <- one_increments$btc - 245.7565
@@ -167,15 +171,6 @@ Users individually provide target ranges, e.g.,
 It can be tricky to think about these as minimums and maximums. It may help to recall that Automated Market Makers sell winners to buy losers and charge a fee for doing so. So as ETH rises in value (1 ETH buys more BTC) the liquidity pool, given a constant product, becomes disproportionately full of BTC instead of ETH.
 
 In the extreme case, if the 100 BTC 1,000 ETH Liquidity Pool with 1 ETH = 0.1 BTC price mentioned above shifted to 1 ETH = 10 BTC, the pool would have to flip to 1,000 BTC and 100 ETH. The BTC comes from sellers of BTC who buy ETH: forcing the pool's balance to change (because of constant product). 
-
-In Uniswap v3, The entire 0 to Infinite range is broken up into ticks, spaced logarithmically such
-that each tick price is 0.01% larger than the previous tick.
-
-Liquidity providers choose their range (e.g., 1 ETH = 0.05 BTC to 1 ETH = 0.25 BTC) and spread their tokens across the ticks. 
-
-These ticks act like 'buckets' of liquidity pooled from multiple providers. As trades occur, price impact happens using the same x*y = k formula within a ticket. Ticks become exhausted of liquidity as price impact moves pushes the relative prices into other buckets of liquidity (i.e., across ticks).
-
-When someone is out of range (e.g., if 1 ETH = 0.049 BTC) their position is 100% in the lower value asset (they sold all their winners to buy the trader's losers with the hope their share of fees makes up for the loss).
 
 Recall the Simulated 100 BTC; 1000 ETH liquidity pool from before but this time with two
 prices on the range noted: 1 ETH = 0.05 BTC and 1 ETH = 0.25 BTC.
@@ -229,7 +224,7 @@ point your position is 100% ETH. Getting 4 ETH for 1 BTC means ETH is high. At t
 your position is 100% BTC.
 
 
-```{r,  warning=FALSE, message=FALSE}
+```{r,  warning=FALSE, message=FALSE, fig.show='hide'}
 
 l_func <- function(k = 100000, pb = 20, pa = 4, x){
   #' l = sqrt(k)
@@ -254,13 +249,18 @@ get_price <- function(k = 100000, pb = 20, pa = 4, x){
   return(y/x)
 }
 
+# This plots by default: suppressing this figure.
 concentrated <- curve(l_func(k = 100000, pb = 20, pa = 4, x = x), from = 0, 100, n = 10000)
+
+```
+
+```{r,  warning=FALSE, message=FALSE}
+# negative values don't make sense 
 conc_pool <- data.frame(
   btc = concentrated$x,
   eth = concentrated$y
 )
 
-# negative values don't make sense 
 conc_pool <- conc_pool %>% dplyr::filter(btc >= 0, eth >= 0)
 conc_pool$ethbtc <- conc_pool$eth/conc_pool$btc
 pool$ethbtc <- pool$eth/pool$btc
@@ -287,11 +287,70 @@ In the Uniswap v2 pool, prices change smoothly following standard x*y = k math d
 In Uniswap v3, concentrated liquidity creates *real reserves* (yellow) that act as the virtual reserves
 within the price boundaries (the two outer dots of the virtual reserve line).
 
-Instead of providing liquidity from 0 to Inf; a liquidity provider bounded between 0.05 and 0.25 
-concentrates their liquidity, accepting that *outside their range* they are 100 % in a single asset.
+In Uniswap v3, liquidity providers choose their range (e.g., Min 1 ETH = 0.05 BTC to Max 1 ETH = 0.25 BTC) and spread their tokens across the ticks. When someone is out of range (e.g., if 1 ETH = 0.049 BTC) their position is 100% in the lower value asset (they sold all their winners to buy the trader's losers with the hope their share of fees makes up for the loss).
 
+## Understanding Uni v3 Ticks
 
+Ticks act like 'buckets' of liquidity pooled from multiple providers. As trades occur, price impact happens using the same x*y = k formula within a tick. Ticks become exhausted of liquidity as price impact moves pushes the relative prices into other buckets of liquidity (i.e., across ticks).
 
+This range is spread across ticks where each (integer) tick `i` is tracked with the formula:
+
+`sqrt(price[i]) = sqrt(1.0001)^[i]`
+
+Ticks are *not* the same size. They are 0.01% apart from their neighboring ticks!
+
+Although we target a price range of 0.05 and 0.25, in actuality, the exact ticks need to fit within the 
+tick spacing of the pool (which varies by fee tier). 
+
+For the ETH-WBTC 0.3% Fee Tier we would choose whichever range is as close as possible to our desired
+range while still being an integer of ticks and meeting the required tick spacing (60 for this pool on Ethereum).
+
+```{r,  warning=FALSE, message=FALSE}
+
+tick_to_price <- function(tick){
+  sqrt(1.0001)^(2*tick) * 1e10
+}
+
+get_closest_tick <- function(desired_price, tick_spacing = 60){
+# base = sqrt(1.0001)
+# y = sqrt(price / 1e10)
+# base^tick = y
+# tick = log(y, base)
+# price = 1e10*(base^tick)^2
+
+r <- list(
+  desired_price = desired_price,
+  actual_price = NULL,
+  tick = NULL
+)
+    
+initial_tick <- log( sqrt(desired_price / 1e10), sqrt(1.0001) )  
+
+if(initial_tick %% tick_spacing == 0){
+  r$actual_price <- desired_price # exact match
+  r$tick <- initial_tick
+} else { 
+  final_tick <- round(initial_tick / tick_spacing)*tick_spacing
+  r$tick <- final_tick 
+  r$actual_price <- sqrt(1.0001)^(2*final_tick) * 1e10
+}
+
+return(r)
+    
+}
+
+reactable(
+  rbind(
+    as.data.frame(get_closest_tick(0.05)),
+    as.data.frame(get_closest_tick(0.25))
+  )
+)
+
+```
+
+Spreading liquidity evenly across ticks results in this (uniform) distribution of liquidity.
+
+Given real reserves 33 WBTC and 333 ETH at 0.1 current price;
 
 
 
