@@ -165,8 +165,8 @@ Uniswap v3 introduces *concentrated liquidity*. Instead of 1 pool covering all t
 
 Users individually provide target ranges, e.g.,
 
-- Minimum Price: 1 ETH = 0.05 BTC (1 ETH *only* gets 0.05 BTC)
-- Maximum Price: 1 ETH = 0.25 BTC (1 ETH gets 5 times as much: 0.25 BTC)
+- Minimum Price: 0.05 BTC/ETH => 1 ETH = 0.05 BTC (1 ETH *only* gets 0.05 BTC)
+- Maximum Price: 0.25 BTC/ETH => 1 ETH = 0.25 BTC (1 ETH gets 5 times as much: 0.25 BTC)
 
 It can be tricky to think about these as minimums and maximums. It may help to recall that Automated Market Makers sell winners to buy losers and charge a fee for doing so. So as ETH rises in value (1 ETH buys more BTC) the liquidity pool, given a constant product, becomes disproportionately full of BTC instead of ETH.
 
@@ -213,85 +213,7 @@ plot_ly(relevant_pool, x = ~btc) %>%
 
 ```
 
-Imagine a single liquidity provider wanted to provide *the same liquidity* but with fewer
-tokens. They could concentrate their liquidity between 0.05 and 0.25 BTC/ETH.
-
-Note: Using Uniswap v3 White Paper format where the unit of account is Y (here, ETH)
-
-pa = BTC/ETH at the low tick (low for BTC)
-pb = BTC/ETH at the high tick (high for BTC)
-
-So for this function we inverse 0.05 to 20 and .25 to 4 to state how many ETH you get for 1 BTC. 
-
-Getting 20 ETH for 1 BTC means ETH is low. This is useful to think about because at this 
-point your position is 100% ETH. Getting 4 ETH for 1 BTC means ETH is high. At this point
-your position is 100% BTC.
-
-
-```{r,  warning=FALSE, message=FALSE, fig.show='hide'}
-
-l_func <- function(k = 100000, pa = 4, pb = 20, x){
-  #' l = sqrt(k)
-  #' (x + l/sqrt(pb)) (y + l*sqrt(pa)) = l^2
-  #' (x + f1) * (y + f2) = k
-  l = sqrt(k)
-  f1 = l/sqrt(pb)
-  f2 = l*sqrt(pa)
-  
-  y = (k - f1*f2 - f2*x) / (x + f1)
-  
-return(y)
-}
-
-get_price <- function(k = 100000, pb = 20, pa = 4, x){
-   l = sqrt(k)
-  f1 = l/sqrt(pb)
-  f2 = l*sqrt(pa)
-  
-  y = (k - f1*f2 - f2*x) / (x + f1)
-  
-  return(y/x)
-}
-
-# This plots by default: suppressing this figure.
-concentrated <- curve(l_func(k = 100000, pb = 20, pa = 4, x = x), from = 0, 100, n = 10000)
-
-```
-
-```{r,  warning=FALSE, message=FALSE}
-# negative values don't make sense 
-conc_pool <- data.frame(
-  btc = concentrated$x,
-  eth = concentrated$y
-)
-
-conc_pool <- conc_pool %>% dplyr::filter(btc >= 0, eth >= 0)
-conc_pool$ethbtc <- conc_pool$eth/conc_pool$btc
-pool$ethbtc <- pool$eth/pool$btc
-
-plot_ly(conc_pool, x = ~btc) %>% 
-  add_trace(y = ~eth, mode = 'lines', type = 'scatter',
-            name = 'Real Reserve', line = list(color = 'orange')) %>% 
-  add_trace(x =~pool$btc, y = ~pool$eth, name = 'Virtual Reserve', mode = 'lines', line = list(color = 'blue')) %>% 
-  add_trace(x = ~33, y = ~333, name = 'Real 0.1 BTC/ETH', mode = 'markers') %>% 
-  add_trace(x = ~100, y = ~1000, name = 'Virtual 0.1 BTC/ETH', mode = 'markers') %>% 
-  add_trace(x = ~low$x, y = ~low$y, mode = 'markers', name = '1 ETH = 0.05 WBTC') %>%
-  add_trace(x = ~high$x, y = ~high$y, mode = 'markers', name = '1 ETH = 0.25 WBTC') %>%
-  layout(title = "Virtual vs Real Reserves for BTC/ETH 0.05 - 0.25",
-         xaxis = list(
-           range = c(0, 200)
-         ),
-         yaxis = list(
-           range = c(0, 2000)
-         ))
-
-```
-
-In the Uniswap v2 pool, prices change smoothly following standard x*y = k math described above.
-In Uniswap v3, concentrated liquidity creates *real reserves* (yellow) that act as the virtual reserves
-within the price boundaries (the two outer dots of the virtual reserve line).
-
-In Uniswap v3, liquidity providers choose their range (e.g., Min 1 ETH = 0.05 BTC to Max 1 ETH = 0.25 BTC) and spread their tokens across the ticks. When someone is out of range (e.g., if 1 ETH = 0.049 BTC) their position is 100% in the lower value asset (they sold all their winners to buy the trader's losers with the hope their share of fees makes up for the loss).
+In Uniswap v3, liquidity providers choose their range (e.g., Min 1 ETH = 0.05 BTC to Max 1 ETH = 0.25 BTC) and spread their liquidity (i.e., tradeability between two tokens) across the range. When someone is out of range (e.g., if 1 ETH = 0.049 BTC) their position is 100% in the lower value asset (they sold all their winners to buy the trader's losers with the hope their share of fees makes up for the loss).
 
 ## Understanding Uni v3 Ticks
 
