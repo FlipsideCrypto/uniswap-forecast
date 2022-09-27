@@ -217,7 +217,11 @@ Imagine a single liquidity provider wanted to provide *the same liquidity* but w
 tokens. They could concentrate their liquidity between 0.05 and 0.25 BTC/ETH.
 
 Note: Using Uniswap v3 White Paper format where the unit of account is Y (here, ETH)
-pb = ETH/BTC at the low tick (low for ETH) and pa = ETH/BTC at the high tick (high for ETH). So for this function we inverse 0.05 to 20 and .25 to 4 to state how many ETH you get for 1 BTC. 
+
+pa = BTC/ETH at the low tick (low for BTC)
+pb = BTC/ETH at the high tick (high for BTC)
+
+So for this function we inverse 0.05 to 20 and .25 to 4 to state how many ETH you get for 1 BTC. 
 
 Getting 20 ETH for 1 BTC means ETH is low. This is useful to think about because at this 
 point your position is 100% ETH. Getting 4 ETH for 1 BTC means ETH is high. At this point
@@ -226,7 +230,7 @@ your position is 100% BTC.
 
 ```{r,  warning=FALSE, message=FALSE, fig.show='hide'}
 
-l_func <- function(k = 100000, pb = 20, pa = 4, x){
+l_func <- function(k = 100000, pa = 4, pb = 20, x){
   #' l = sqrt(k)
   #' (x + l/sqrt(pb)) (y + l*sqrt(pa)) = l^2
   #' (x + f1) * (y + f2) = k
@@ -304,19 +308,28 @@ tick spacing of the pool (which varies by fee tier).
 
 For the ETH-WBTC 0.3% Fee Tier we would choose whichever range is as close as possible to our desired
 range while still being an integer of ticks and meeting the required tick spacing (60 for this pool on Ethereum).
+In addition to this tick spacing, for any pool, differences in the allowable decimals of the tokens 
+will require a decimal adjustment. 
+
+Most ERC20 that are not stablecoins use 18 decimals and won't require an adjustment. But wrapped Bitcoin, WBTC, has 8 decimals to mimic Bitcoin; while ETH has 18. Thus, a 1e10 (18-8 = 10) decimal adjustment is needed.
+
+For a USDC-WETH pool; USDC has 6 decimals. Thus, a 1e12 (18 - 6 = 12) decimal adjustment is needed. 
+
+Tick spacing matters significantly and changes by price tier. The USDC-WETH 0.3% pool has a 60 tick spacing just like 
+the WBTC-ETH 0.3% pool; while the USDC-WETH 0.05% pool has a 10 tick spacing. For every analysis, getting the correct pool specific decimal adjustments and tick spacing are critical.
 
 ```{r,  warning=FALSE, message=FALSE}
 
-tick_to_price <- function(tick){
-  sqrt(1.0001)^(2*tick) * 1e10
+tick_to_price <- function(tick, decimal_adjustment = 1){
+  sqrt(1.0001)^(2*tick) * decimal_adjustment
 }
 
-get_closest_tick <- function(desired_price, tick_spacing = 60){
+get_closest_tick <- function(desired_price, tick_spacing = 60, decimal_adjustment = 1){
 # base = sqrt(1.0001)
-# y = sqrt(price / 1e10)
+# y = sqrt(price / decimal_adjustment)
 # base^tick = y
 # tick = log(y, base)
-# price = 1e10*(base^tick)^2
+# price = decimal_adjustment*(base^tick)^2
 
 r <- list(
   desired_price = desired_price,
@@ -324,7 +337,7 @@ r <- list(
   tick = NULL
 )
     
-initial_tick <- log( sqrt(desired_price / 1e10), sqrt(1.0001) )  
+initial_tick <- log( sqrt(desired_price / decimal_adjustment), sqrt(1.0001) )  
 
 if(initial_tick %% tick_spacing == 0){
   r$actual_price <- desired_price # exact match
@@ -332,25 +345,156 @@ if(initial_tick %% tick_spacing == 0){
 } else { 
   final_tick <- round(initial_tick / tick_spacing)*tick_spacing
   r$tick <- final_tick 
-  r$actual_price <- sqrt(1.0001)^(2*final_tick) * 1e10
+  r$actual_price <- sqrt(1.0001)^(2*final_tick) * decimal_adjustment
 }
 
 return(r)
     
 }
 
+# WBTC has 8 decimals while WETH has 18
+# So they have a 1e10 decimal adjustment factor
 reactable(
   rbind(
-    as.data.frame(get_closest_tick(0.05)),
-    as.data.frame(get_closest_tick(0.25))
+    as.data.frame(get_closest_tick(0.05, decimal_adjustment = 1e10)),
+    as.data.frame(get_closest_tick(0.25, decimal_adjustment = 1e10))
   )
 )
 
 ```
 
-Spreading liquidity evenly across ticks results in this (uniform) distribution of liquidity.
+Spreading liquidity evenly across ticks results in a uniform distribution of liquidity across ticks.
+But the *amount* of tokens to reach a desired liquidity (to then spread) across a concentrated range depends **on the current price**.
 
-Given real reserves 33 WBTC and 333 ETH at 0.1 current price;
+Given 1 BTC, the amount of ETH required to concentrate liquidity in the range of 0.05 BTC/ETH (20 ETH / BTC) 
+and 0.25 BTC/ETH (4 ETH / BTC) depends on the current price of BTC/ETH (or ETH/BTC).
+
+Using the same syntax from the White Paper where x is BTC and y is ETH; 
+
+- x = 1 BTC
+- y = ?? ETH 
+- Current Price, P = y/x = 10 ETH/BTC (0.1 BTC/ETH)
+- min price (for BTC), pa = 4 ETH/BTC  (BTC is LOW, we are 100% BTC at this price) 
+- max price (for BTC), pb = 20 ETH/BTC (BTC is HIGH, we are 100% ETH at this price) 
+
+```{r}
+
+match_y_to_x <- function(x, P, pa, pb){
+  #' Given a current price P, number of tokens x, and price ranges pb and pa
+  #' A required amount of y tokens can be calculated. 
+  #' Lx = x * sqrt(P \* Pb) / ( sqrt(Pb) - sqrt(P) )
+  #' y = Lx * ( sqrt(P) - sqrt(Pa) )
+  
+  r <- list(
+    amount_x = x,
+    current_price = P,
+    min_price = pa,
+    max_price = pb,
+    required_y = NULL
+    
+  )
+  
+  Lx = x * sqrt(P * pb) / ( sqrt(pb) - sqrt(P) )
+  y = Lx * ( sqrt(P) - sqrt(pa) )
+  
+  r$required_y = y
+  
+  return(r)
+}
+
+reactable(
+  as.data.frame(
+match_y_to_x(x = 1, # 1 BTC, 
+             P = 10, # 10 ETH per BTC
+             pa = 4, # 4 ETH per BTC, BTC IS LOW
+             pb = 20 # 20 ETH per BTC, BTC is HIGH
+             )
+  )
+)
+
+```
+
+The desired range would require ~12.549 ETH per BTC deposited (it scales linearly w/ more BTC given same price and range).
+
+To do the calculation in reverse (matching 12.549 ETH to 1 BTC), switch pb and pa; then inverse P, pb, and pa.
+
+- x = ?? BTC
+- y = 12.549 ETH
+- Inverse Current Price, P^-1 = x/y = 0.1 BTC/ETH (10 ETH/BTC)
+- min price (for ETH), pa = 0.05 BTC/ETH (ETH is LOW, you only get 0.05 BTC for 1 ETH, we are 100% ETH at this price) 
+- max price (for ETH), pb = 0.25 BTC/ETH (ETH is HIGH, you get 0.25 BTC for 1 ETH, we are 100% BTC at this price)
+
+```{r}
+
+match_x_to_y <- function(y, P, pa, pb){
+  #' Given a current price P, number of tokens y, and price ranges pb and pa
+  #' A required amount of x tokens can be calculated. 
+  #' Lx = x * sqrt(P \* Pb) / ( sqrt(Pb) - sqrt(P) )
+  #' y = Lx * ( sqrt(P) - sqrt(Pa) )
+  
+  r <- list(
+    amount_y = y,
+    current_price = P,
+    min_price = pa, 
+    max_price = pb,
+    required_x = NULL
+    
+  )
+  
+  Ly = y * sqrt(P * pb) / ( sqrt(pb) - sqrt(P) )
+  x = Ly * ( sqrt(P) - sqrt(pa) )
+  
+  r$required_x = x
+  
+  return(r)
+}
+
+reactable(
+  as.data.frame(
+    match_x_to_y(y = 12.549, P = 0.1, pa = 0.05, pb = 0.25)
+  )
+)
+
+```
+
+Reviewing the original 100 BTC, 1000 ETH Uni V2 pool with a 0.1 BTC/ETH current price.
+Concentration to the 0.05 - 0.25 BTC/ETH range  and keeping the 0.1 BTC/ETH current price 
+means that 1000 ETH can be matched with *only* `r match_x_to_y(y = 1000, P = 0.1, pb = 0.25, pa = 0.05)$required_x` BTC.
+
+This is *capital efficiency*. Instead of providing 100 BTC and 1000 ETH to the 0 - Infinite range of Uniswap
+v2 at 0.1 BTC/ETH each. Uniswap v3 allows for less tokens (1000 ETH, 79.689 BTC) to be used to provide more liquidity (per unit) at the price. 
+
+Although in this case the total amount of liquidity is slightly smaller (1000 * 79.689 < 1000 * 100), it is more efficient.
+
+```{r}
+reactable(
+  as.data.frame(
+    match_x_to_y(y = 1000, P = 0.1, pa = 0.05, pb = 0.25)
+  )
+)
+
+```
+
+More efficiency given the same amount of liquidity (i.e. same tokens) is more obvious when making the range flexible
+to the exact amount of tokens provided. 
+
+Forcefully using all available tokens given a current price and max price results in a flexible minimum price.
+
+- x = 100 BTC
+- y = 1000 ETH
+- Current Price, P = y/x = 10 ETH/BTC
+- min_price = 
+
+```{r}
+min_tick <- get_closest_tick(0.05, tick_spacing = 60, decimal_adjustment = 1e10)$tick
+max_tick <- get_closest_tick(0.25, tick_spacing = 60, decimal_adjustment = 1e10)$tick
+
+tick_spread <- seq(min_tick, max_tick, by = 60)
+plot(tick_spread, y = rep(1, length(tick_spread)), type = 'l')
+
+```
+
+
 
 
 
