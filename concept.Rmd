@@ -233,7 +233,7 @@ range while still being an integer of ticks and meeting the required tick spacin
 In addition to this tick spacing, for any pool, differences in the allowable decimals of the tokens 
 will require a decimal adjustment. 
 
-Most ERC20 that are not stablecoins use 18 decimals and won't require an adjustment. But wrapped Bitcoin, WBTC, has 8 decimals to mimic Bitcoin; while ETH has 18. Thus, a 1e10 (18-8 = 10) decimal adjustment is needed.
+Most ERC20 that are not stablecoins use 18 decimals and won't require an adjustment with ETH. But wrapped Bitcoin, WBTC, has 8 decimals to mimic Bitcoin; while ETH has 18. Thus, a 1e10 (18-8 = 10) decimal adjustment is needed.
 
 For a USDC-WETH pool; USDC has 6 decimals. Thus, a 1e12 (18 - 6 = 12) decimal adjustment is needed. 
 
@@ -288,16 +288,64 @@ reactable(
 Spreading liquidity evenly across ticks results in a uniform distribution of liquidity across ticks.
 But the *amount* of tokens to reach a desired liquidity (to then spread) across a concentrated range depends **on the current price**.
 
-Given 1 BTC, the amount of ETH required to concentrate liquidity in the range of 0.05 BTC/ETH (20 ETH / BTC) 
-and 0.25 BTC/ETH (4 ETH / BTC) depends on the current price of BTC/ETH (or ETH/BTC).
+To get a simple result, let's assume we have 12.549 ETH and we need to know how much BTC to match it for our desired 
+0.05 BTC/ETH - 0.25 BTC/ETH range.
 
-Using the same syntax from the White Paper where x is BTC and y is ETH; 
+- x = ?? BTC
+- y = 12.549 ETH
+- Current Price: x/y = 0.1 BTC/ETH
+- min price (for ETH), pa = 0.05 BTC/ETH (ETH is LOW, you only get 0.05 BTC for 1 ETH, we are 100% ETH at this price) 
+- max price (for ETH), pb = 0.25 BTC/ETH (ETH is HIGH, you get 0.25 BTC for 1 ETH, we are 100% BTC at this price)
+
+```{r}
+
+match_x_to_y <- function(y, P, pa, pb){
+  #' Given a current price P, number of tokens y, and price ranges pb and pa
+  #' A required amount of x tokens can be calculated. 
+  #' Lx = x * sqrt(P \* Pb) / ( sqrt(Pb) - sqrt(P) )
+  #' y = Lx * ( sqrt(P) - sqrt(Pa) )
+  
+  r <- list(
+    amount_y = y,
+    current_price = P,
+    min_price = pa, 
+    max_price = pb,
+    required_x = NULL
+    
+  )
+  
+  Ly = y * sqrt(P * pb) / ( sqrt(pb) - sqrt(P) )
+  x = Ly * ( sqrt(P) - sqrt(pa) )
+  
+  r$required_x = x
+  
+  return(r)
+}
+
+reactable(
+  as.data.frame(
+    match_x_to_y(y = 12.549, P = 0.1, pa = 0.05, pb = 0.25)
+  )
+)
+
+```
+
+This range needs 1 BTC to match with 12.549 ETH (this number was chosen on purpose).
+
+
+To show the process in reverse, if we had 1 BTC and needed to know how much ETH we needed to 
+concentrate into the 0.05 BTC/ETH - 0.25 BTC/ETH range at a 0.1 BTC/ETH Current Price, everything
+has to be **inverted**.
+
+- max ETH price 0.25 BTC/ETH becomes minimum BTC price -> 4 ETH/BTC
+- min ETH price 0.05 BTC/ETH becomes max BTC price -> 20 ETH/BTC
+- price is inverted 0.1 BTC/ETH -> 10 ETH/BTC
 
 - x = 1 BTC
 - y = ?? ETH 
-- Current Price, P = y/x = 10 ETH/BTC (0.1 BTC/ETH)
-- min price (for BTC), pa = 4 ETH/BTC  (BTC is LOW, we are 100% BTC at this price) 
-- max price (for BTC), pb = 20 ETH/BTC (BTC is HIGH, we are 100% ETH at this price) 
+- Current Price: 10 ETH/BTC
+- min price (for BTC), pa = 4 ETH/BTC  (BTC is LOW, you only get 4 ETH per BTC, we are 100% BTC at this price) 
+- max price (for BTC), pb = 20 ETH/BTC (BTC is HIGH, you get 5x as much ETH per BTC, we are 100% ETH at this price) 
 
 ```{r}
 
@@ -338,46 +386,10 @@ match_y_to_x(x = 1, # 1 BTC,
 
 The desired range would require ~12.549 ETH per BTC deposited (it scales linearly w/ more BTC given same price and range).
 
-To do the calculation in reverse (matching 12.549 ETH to 1 BTC), switch pb and pa; then inverse P, pb, and pa.
+Your choice of *unit of account* determines how we define minimum and maximum for a range. Whichever way you choose 
+to account for and calculate these ranges, it helps to pick one and stay consistent. BTC/ETH has been the preferred method unit of account ratio in this paper and will continue to be so.
 
-- x = ?? BTC
-- y = 12.549 ETH
-- Inverse Current Price, P^-1 = x/y = 0.1 BTC/ETH (10 ETH/BTC)
-- min price (for ETH), pa = 0.05 BTC/ETH (ETH is LOW, you only get 0.05 BTC for 1 ETH, we are 100% ETH at this price) 
-- max price (for ETH), pb = 0.25 BTC/ETH (ETH is HIGH, you get 0.25 BTC for 1 ETH, we are 100% BTC at this price)
-
-```{r}
-
-match_x_to_y <- function(y, P, pa, pb){
-  #' Given a current price P, number of tokens y, and price ranges pb and pa
-  #' A required amount of x tokens can be calculated. 
-  #' Lx = x * sqrt(P \* Pb) / ( sqrt(Pb) - sqrt(P) )
-  #' y = Lx * ( sqrt(P) - sqrt(Pa) )
-  
-  r <- list(
-    amount_y = y,
-    current_price = P,
-    min_price = pa, 
-    max_price = pb,
-    required_x = NULL
-    
-  )
-  
-  Ly = y * sqrt(P * pb) / ( sqrt(pb) - sqrt(P) )
-  x = Ly * ( sqrt(P) - sqrt(pa) )
-  
-  r$required_x = x
-  
-  return(r)
-}
-
-reactable(
-  as.data.frame(
-    match_x_to_y(y = 12.549, P = 0.1, pa = 0.05, pb = 0.25)
-  )
-)
-
-```
+## Capital Efficiency 
 
 Reviewing the original 100 BTC, 1000 ETH Uni V2 pool with a 0.1 BTC/ETH current price.
 Concentration to the 0.05 - 0.25 BTC/ETH range  and keeping the 0.1 BTC/ETH current price 
@@ -404,8 +416,15 @@ Forcefully using all available tokens given a current price and max price result
 
 - x = 100 BTC
 - y = 1000 ETH
-- Current Price, P = y/x = 10 ETH/BTC
-- min_price = 
+- Current Price, P = y/x = 0.1 BTC/ETH
+- min_price = ?? (here, your position is 100% ETH).
+- max_price = 0.25 BTC/ETH (here, your position is 100% BTC)
+
+```{r}
+
+
+```
+
 
 ```{r}
 min_tick <- get_closest_tick(0.05, tick_spacing = 60, decimal_adjustment = 1e10)$tick
