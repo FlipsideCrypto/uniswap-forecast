@@ -96,7 +96,7 @@ The solution to this is to widen the curve by deepening the liquidity available.
 
 Looking at the [Uniswap v2 ETH/WBTC pool](https://v2.info.uniswap.org/pair/0xbb2b8038a1640196fbe3e38816f3e67cba72d940%3E) analytics page.
 
-![Example Screenshot from 2022-09-18](v2_wbtc_eth_screenshot.png){width="200"}
+![Example Screenshot from 2022-09-18](v2_wbtc_eth_screenshot.png){width="300"}
 
 245.7565 WBTC and 3,532 ETH are in this pool. This is a relative price of 0.06957 BTC per ETH. Bitcoin is doing better against ETH than in the fake example above.
 
@@ -165,15 +165,14 @@ Uniswap v3 introduces *concentrated liquidity*. Instead of 1 pool covering all t
 
 Users individually provide target ranges, e.g.,
 
-- Minimum Price: 0.05 BTC/ETH => 1 ETH = 0.05 BTC (1 ETH *only* gets 0.05 BTC)
-- Maximum Price: 0.25 BTC/ETH => 1 ETH = 0.25 BTC (1 ETH gets 5 times as much: 0.25 BTC)
+-   Minimum Price: 0.05 BTC/ETH => 1 ETH = 0.05 BTC (1 ETH *only* gets 0.05 BTC)
+-   Maximum Price: 0.25 BTC/ETH => 1 ETH = 0.25 BTC (1 ETH gets 5 times as much: 0.25 BTC)
 
 It can be tricky to think about these as minimums and maximums. It may help to recall that Automated Market Makers sell winners to buy losers and charge a fee for doing so. So as ETH rises in value (1 ETH buys more BTC) the liquidity pool, given a constant product, becomes disproportionately full of BTC instead of ETH.
 
-In the extreme case, if the 100 BTC 1,000 ETH Liquidity Pool with 1 ETH = 0.1 BTC price mentioned above shifted to 1 ETH = 10 BTC, the pool would have to flip to 1,000 BTC and 100 ETH. The BTC comes from sellers of BTC who buy ETH: forcing the pool's balance to change (because of constant product). 
+In the extreme case, if the 100 BTC 1,000 ETH Liquidity Pool with 1 ETH = 0.1 BTC price mentioned above shifted to 1 ETH = 10 BTC, the pool would have to flip to 1,000 BTC and 100 ETH. The BTC comes from sellers of BTC who buy ETH: forcing the pool's balance to change (because of constant product).
 
-Recall the Simulated 100 BTC; 1000 ETH liquidity pool from before but this time with two
-prices on the range noted: 1 ETH = 0.05 BTC and 1 ETH = 0.25 BTC.
+Recall the Simulated 100 BTC; 1000 ETH liquidity pool from before but this time with two prices on the range noted: 1 ETH = 0.05 BTC and 1 ETH = 0.25 BTC.
 
 ```{r, warning=FALSE, message=FALSE}
 
@@ -225,20 +224,15 @@ This range is spread across ticks where each (integer) tick `i` is tracked with 
 
 Ticks are *not* the same size. They are 0.01% apart from their neighboring ticks!
 
-Although we target a price range of 0.05 and 0.25, in actuality, the exact ticks need to fit within the 
-tick spacing of the pool (which varies by fee tier). 
+Although we target a price range of 0.05 and 0.25, in actuality, the exact ticks need to fit within the tick spacing of the pool (which varies by fee tier).
 
-For the ETH-WBTC 0.3% Fee Tier we would choose whichever range is as close as possible to our desired
-range while still being an integer of ticks and meeting the required tick spacing (60 for this pool on Ethereum).
-In addition to this tick spacing, for any pool, differences in the allowable decimals of the tokens 
-will require a decimal adjustment. 
+For the ETH-WBTC 0.3% Fee Tier we would choose whichever range is as close as possible to our desired range while still being an integer of ticks and meeting the required tick spacing (60 for this pool on Ethereum). In addition to this tick spacing, for any pool, differences in the allowable decimals of the tokens will require a decimal adjustment.
 
 Most ERC20 that are not stablecoins use 18 decimals and won't require an adjustment with ETH. But wrapped Bitcoin, WBTC, has 8 decimals to mimic Bitcoin; while ETH has 18. Thus, a 1e10 (18-8 = 10) decimal adjustment is needed.
 
-For a USDC-WETH pool; USDC has 6 decimals. Thus, a 1e12 (18 - 6 = 12) decimal adjustment is needed. 
+For a USDC-WETH pool; USDC has 6 decimals. Thus, a 1e12 (18 - 6 = 12) decimal adjustment is needed.
 
-Tick spacing matters significantly and changes by price tier. The USDC-WETH 0.3% pool has a 60 tick spacing just like 
-the WBTC-ETH 0.3% pool; while the USDC-WETH 0.05% pool has a 10 tick spacing. For every analysis, getting the correct pool specific decimal adjustments and tick spacing are critical.
+Tick spacing matters significantly and changes by price tier. The USDC-WETH 0.3% pool has a 60 tick spacing just like the WBTC-ETH 0.3% pool; while the USDC-WETH 0.05% pool has a 10 tick spacing. For every analysis, getting the correct pool specific decimal adjustments and tick spacing are critical.
 
 ```{r,  warning=FALSE, message=FALSE}
 
@@ -285,17 +279,15 @@ reactable(
 
 ```
 
-Spreading liquidity evenly across ticks results in a uniform distribution of liquidity across ticks.
-But the *amount* of tokens to reach a desired liquidity (to then spread) across a concentrated range depends **on the current price**.
+Spreading liquidity evenly across ticks results in a uniform distribution of liquidity across ticks. But the *amount* of tokens to reach a desired liquidity (to then spread) across a concentrated range depends **on the current price**.
 
-To get a simple result, let's assume we have 12.549 ETH and we need to know how much BTC to match it for our desired 
-0.05 BTC/ETH - 0.25 BTC/ETH range.
+To get a simple result, let's assume we have 12.549 ETH and we need to know how much BTC to match it for our desired 0.05 BTC/ETH - 0.25 BTC/ETH range.
 
-- x = ?? BTC
-- y = 12.549 ETH
-- Current Price: x/y = 0.1 BTC/ETH
-- min price (for ETH), pa = 0.05 BTC/ETH (ETH is LOW, you only get 0.05 BTC for 1 ETH, we are 100% ETH at this price) 
-- max price (for ETH), pb = 0.25 BTC/ETH (ETH is HIGH, you get 0.25 BTC for 1 ETH, we are 100% BTC at this price)
+-   x = ?? BTC
+-   y = 12.549 ETH
+-   Current Price: x/y = 0.1 BTC/ETH
+-   min price (for ETH), pa = 0.05 BTC/ETH (ETH is LOW, you only get 0.05 BTC for 1 ETH, we are 100% ETH at this price)
+-   max price (for ETH), pb = 0.25 BTC/ETH (ETH is HIGH, you get 0.25 BTC for 1 ETH, we are 100% BTC at this price)
 
 ```{r}
 
@@ -332,20 +324,23 @@ reactable(
 
 This range needs 1 BTC to match with 12.549 ETH (this number was chosen on purpose).
 
+To show the process in reverse, if we had 1 BTC and needed to know how much ETH we needed to concentrate into the 0.05 BTC/ETH - 0.25 BTC/ETH range at a 0.1 BTC/ETH Current Price, everything has to be **inverted**.
 
-To show the process in reverse, if we had 1 BTC and needed to know how much ETH we needed to 
-concentrate into the 0.05 BTC/ETH - 0.25 BTC/ETH range at a 0.1 BTC/ETH Current Price, everything
-has to be **inverted**.
+-   max ETH price 0.25 BTC/ETH becomes minimum BTC price -> 4 ETH/BTC
 
-- max ETH price 0.25 BTC/ETH becomes minimum BTC price -> 4 ETH/BTC
-- min ETH price 0.05 BTC/ETH becomes max BTC price -> 20 ETH/BTC
-- price is inverted 0.1 BTC/ETH -> 10 ETH/BTC
+-   min ETH price 0.05 BTC/ETH becomes max BTC price -> 20 ETH/BTC
 
-- x = 1 BTC
-- y = ?? ETH 
-- Current Price: 10 ETH/BTC
-- min price (for BTC), pa = 4 ETH/BTC  (BTC is LOW, you only get 4 ETH per BTC, we are 100% BTC at this price) 
-- max price (for BTC), pb = 20 ETH/BTC (BTC is HIGH, you get 5x as much ETH per BTC, we are 100% ETH at this price) 
+-   price is inverted 0.1 BTC/ETH -> 10 ETH/BTC
+
+-   x = 1 BTC
+
+-   y = ?? ETH
+
+-   Current Price, y/x = 10 ETH/BTC
+
+-   min price (for BTC), pa = 4 ETH/BTC (BTC is LOW, you only get 4 ETH per BTC, we are 100% BTC at this price)
+
+-   max price (for BTC), pb = 20 ETH/BTC (BTC is HIGH, you get 5x as much ETH per BTC, we are 100% ETH at this price)
 
 ```{r}
 
@@ -386,17 +381,13 @@ match_y_to_x(x = 1, # 1 BTC,
 
 The desired range would require ~12.549 ETH per BTC deposited (it scales linearly w/ more BTC given same price and range).
 
-Your choice of *unit of account* determines how we define minimum and maximum for a range. Whichever way you choose 
-to account for and calculate these ranges, it helps to pick one and stay consistent. BTC/ETH has been the preferred method unit of account ratio in this paper and will continue to be so.
+Your choice of *unit of account* (i.e., choice of price = y/x or x/y) determines how we define minimum and maximum for a range. Whichever way you choose to account for and calculate these ranges, it helps to pick one and stay consistent. In line with the original White Paper, BTC/ETH (i.e., x/y) has been the preferred method unit of account ratio in this paper, but inversions will be noted as needed to align to available math derived from other sources.
 
-## Capital Efficiency 
+## Capital Efficiency & Range Selection
 
-Reviewing the original 100 BTC, 1000 ETH Uni V2 pool with a 0.1 BTC/ETH current price.
-Concentration to the 0.05 - 0.25 BTC/ETH range  and keeping the 0.1 BTC/ETH current price 
-means that 1000 ETH can be matched with *only* `r match_x_to_y(y = 1000, P = 0.1, pb = 0.25, pa = 0.05)$required_x` BTC.
+Reviewing the original 100 BTC, 1000 ETH Uni V2 pool with a 0.1 BTC/ETH current price. Concentration to the 0.05 - 0.25 BTC/ETH range and keeping the 0.1 BTC/ETH current price means that 1000 ETH can be matched with *only* `r match_x_to_y(y = 1000, P = 0.1, pb = 0.25, pa = 0.05)$required_x` BTC.
 
-This is *capital efficiency*. Instead of providing 100 BTC and 1000 ETH to the 0 - Infinite range of Uniswap
-v2 at 0.1 BTC/ETH each. Uniswap v3 allows for less tokens (1000 ETH, 79.689 BTC) to be used to provide more liquidity (per unit) at the price. 
+This is *capital efficiency*. Instead of providing 100 BTC and 1000 ETH to the 0 - Infinite range of Uniswap v2 at 0.1 BTC/ETH each. Uniswap v3 allows for less tokens (1000 ETH, 79.689 BTC) to be used to provide more liquidity (per unit) at the price.
 
 Although in this case the total amount of liquidity is slightly smaller (1000 * 79.689 < 1000 * 100), it is more efficient.
 
@@ -409,22 +400,179 @@ reactable(
 
 ```
 
-More efficiency given the same amount of liquidity (i.e. same tokens) is more obvious when making the range flexible
-to the exact amount of tokens provided. 
+The increase in efficiency is most obvious when making the range flexible to ensure the exact amount of tokens available is used.
 
-Forcefully using all available tokens given a current price and max price results in a flexible minimum price.
+Forcefully using all available tokens given a current price and max price with a flexible minimum price:
 
-- x = 100 BTC
-- y = 1000 ETH
-- Current Price, P = y/x = 0.1 BTC/ETH
-- min_price = ?? (here, your position is 100% ETH).
-- max_price = 0.25 BTC/ETH (here, your position is 100% BTC)
+-   x = 100 BTC
+-   y = 1000 ETH
+-   Current Price, x/y = 0.1 BTC/ETH
+-   min_price = ?? BTC/ETH (here, your position is 100% ETH).
+-   max_price = 0.25 BTC/ETH (here, your position is 100% BTC)
+
+Unfortunately, the most readily available equations use the inverted price: Y/X (i.e., ETH/BTC) for these calculations, in contrast with the original white paper.
+
+So again, using inversion:
+
+-   x = 100 BTC
+-   y = 1000 ETH
+-   Current Price, y/x, 10 ETH/BTC
+-   max price = 0.25 BTC/ETH => becomes min price 4 ETH/BTC.
+-   min price = ?? ETH/BTC => becomes max price ?? ETH/BTC.
+
+We can calculate the inverted max price, and then invert it to find the min price for our preferred (original white paper) x/y price ratio.
 
 ```{r}
 
+match_tokens <- function(x, y, P, pa = NULL, pb = NULL, yx = TRUE){
+  
+  if(is.null(pa) & is.null(pb)){
+    stop("min price pa OR max price pb must be provided")
+  }
+  
+  if(!is.null(pa) & !is.null(pb)){
+    stop("one of min price or max price should be unknown, NULL")
+  }
+  
+   r <- list(
+    amount_x = x,
+    amount_y = y,
+    current_price = P,
+    min_price = NULL,
+    max_price = NULL
+  )
+  
+   if(!is.null(pa)){
+     r$min_price <- pa
+   } else { 
+     r$max_price <- pb
+   }
+   
+   # if min_price pa is given and prices are in Y/X format
+   if(!is.null(pa) & yx == TRUE){
+     
+     f1 <- (y^2)/(x^2)
+     f2 <- sqrt(pa) - sqrt(P) + (y/(sqrt(P)*x))
+     pb <- f1 * (f2)^-2
+     
+     r$max_price <- pb
+     
+   }
+   
+   # if min_price pa is NOT given and prices are in Y/X format
+   if(is.null(pa) & yx = TRUE){
+     f1 <- y / (sqrt(pb) * x)
+     f2 <- y / (sqrt(P) * x)
+     pa <- (f1 + sqrt(P) - f2)^2
+     r$min_price <- pa
+   }
+   
+   return(r)
+}
+
+
+match_min_to_tokens <- function(x, y, P, pb){
+  #' pa = ( 
+  #' ( y / (sqrt(pb)*x) ) + 
+  #'  sqrt(P) - 
+  #'  ( y / (sqrt(P)*x))
+  #'   ) ^2
+  
+   r <- list(
+    amount_x = x,
+     amount_y = y,
+    current_price = P, 
+    required_min_price = NULL,
+    max_price = pb
+  )
+  
+  f1 <- y / (sqrt(pb) * x)
+  f2 <- y / (sqrt(P) * x)
+  
+  pa <- (f1 + sqrt(P) - f2)^2
+  
+  r$required_min_price <- pa
+  
+  return(r)
+  
+}
+
+match_max_to_tokens <- function(x, y, P, pa){
+  #' pa = ( 
+  #' ( y / (sqrt(pb)*x) ) + 
+  #'  sqrt(P) - 
+  #'  ( y / (sqrt(P)*x))
+  #'   ) ^2
+  #'  Solve the above for pb
+  
+   r <- list(
+    amount_x = x,
+     amount_y = y,
+    current_price = P, 
+    min_price = pa,
+    required_max_price = NULL
+  )
+  
+  f1 <- (y^2)/(x^2)
+  f2 <- sqrt(pa) - sqrt(P) + (y/(sqrt(P)*x))
+  
+  pb <- f1 * (f2)^-2
+  
+  r$required_max_price <- pb
+  
+  return(r)
+}
+
+reactable(
+  as.data.frame(
+    match_max_to_tokens(x = 100, y = 1000, P = 10, pa = 4)
+  )
+)
 
 ```
 
+Inverting this back to our desire BTC/ETH format:
+
+-   x = 100 BTC
+-   y = 1000 ETH
+-   Current Price, y/x, 10 ETH/BTC => 0.1 BTC/ETH
+-   max price 25 ETH/BTC => 0.04 BTC/ETH.
+-   min price 4 ETH/BTC => max price 0.25 BTC/ETH
+
+Recall earlier, that the 0.05 - 0.25 range only required 79 BTC and 1000 ETH at a 0.1 price.
+
+This 0.04 - 0.25 range uses all 100 BTC (and 1000 ETH) we have available, but it spreads liquidity wider and may be less capital efficient and result in less revenue per tick. We can't know a priori which range will be more profitable overall as that will depend on how much liquidity others are providing across which ticks and the changing prices of BTC/ETH.
+
+But, nonetheless, the same liquidity `100 BTC * 1000 ETH = k = 100,000` is more efficient in the 0.04 - 0.25 range than it would be in the Uniswap v2 0 - Inf range given a set of N swaps that all occur in the 0.04 - 0.25 range paying 0.3% fees.
+
+Note: The implied proportionality (1/0.04 = .25 * 100 BTC) of the clean min and max prices are because the amounts and current price are all proportional.
+
+Given real world examples, you can get very odd looking min and max prices when forcing ranges to fit an amount of tokens.
+
+## Real World Range Selection Confirmation
+
+To both confirm the provided math and provide a real world reference example to range selection.
+
+![Example Screenshot from 2022-09-28](v3_wbtc_eth_pricing.png){width="750"}
+
+Consider the included image of Uniswap v3 WBTC-ETH 0.3% Pool. With the following parameters:
+
+-   x = 100 WBTC
+-   y = 1000.44 ETH (excuse the small difference, this is a result of tick spacing)
+-   Current price, x/y, = 0.068 WBTC/ETH
+-   Min Price = 0.006 WBTC/ETH
+-   Max Price = 0.249 WBTC/ETH
+
+Using the previously defined formulas, let's confirm that the min price 0.006 for this range.
+
+Knowing that minimum is the inversion of maximum, we can use `match_max_to_tokens()` (see code)
+
+```{r}
+# yx 
+max_yx <- match_max_to_tokens(x = 100, y = 1000.44, P = 0.068^-1, pa = 0.249^-1)$required_max_price
+
+
+```
 
 ```{r}
 min_tick <- get_closest_tick(0.05, tick_spacing = 60, decimal_adjustment = 1e10)$tick
@@ -434,11 +582,3 @@ tick_spread <- seq(min_tick, max_tick, by = 60)
 plot(tick_spread, y = rep(1, length(tick_spread)), type = 'l')
 
 ```
-
-
-
-
-
-
-
-
