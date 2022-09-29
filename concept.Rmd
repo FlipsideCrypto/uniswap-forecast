@@ -327,19 +327,13 @@ This range needs 1 BTC to match with 12.549 ETH (this number was chosen on purpo
 To show the process in reverse, if we had 1 BTC and needed to know how much ETH we needed to concentrate into the 0.05 BTC/ETH - 0.25 BTC/ETH range at a 0.1 BTC/ETH Current Price, everything has to be **inverted**.
 
 -   max ETH price 0.25 BTC/ETH becomes minimum BTC price -> 4 ETH/BTC
-
 -   min ETH price 0.05 BTC/ETH becomes max BTC price -> 20 ETH/BTC
-
 -   price is inverted 0.1 BTC/ETH -> 10 ETH/BTC
 
 -   x = 1 BTC
-
 -   y = ?? ETH
-
 -   Current Price, y/x = 10 ETH/BTC
-
 -   min price (for BTC), pa = 4 ETH/BTC (BTC is LOW, you only get 4 ETH per BTC, we are 100% BTC at this price)
-
 -   max price (for BTC), pb = 20 ETH/BTC (BTC is HIGH, you get 5x as much ETH per BTC, we are 100% ETH at this price)
 
 ```{r}
@@ -410,21 +404,12 @@ Forcefully using all available tokens given a current price and max price with a
 -   min_price = ?? BTC/ETH (here, your position is 100% ETH).
 -   max_price = 0.25 BTC/ETH (here, your position is 100% BTC)
 
-Unfortunately, the most readily available equations use the inverted price: Y/X (i.e., ETH/BTC) for these calculations, in contrast with the original white paper.
-
-So again, using inversion:
-
--   x = 100 BTC
--   y = 1000 ETH
--   Current Price, y/x, 10 ETH/BTC
--   max price = 0.25 BTC/ETH => becomes min price 4 ETH/BTC.
--   min price = ?? ETH/BTC => becomes max price ?? ETH/BTC.
-
-We can calculate the inverted max price, and then invert it to find the min price for our preferred (original white paper) x/y price ratio.
+We can use the `price_all_tokens()` with min price `pa = NULL` and noting our 
+price is **not** in y/x (ETH/BTC) format; it is in x/y (BTC/ETH) format.
 
 ```{r}
 
-match_tokens <- function(x, y, P, pa = NULL, pb = NULL, yx = TRUE){
+price_all_tokens <- function(x, y, P, pa = NULL, pb = NULL, yx = TRUE){
   
   if(is.null(pa) & is.null(pb)){
     stop("min price pa OR max price pb must be provided")
@@ -460,84 +445,38 @@ match_tokens <- function(x, y, P, pa = NULL, pb = NULL, yx = TRUE){
    }
    
    # if min_price pa is NOT given and prices are in Y/X format
-   if(is.null(pa) & yx = TRUE){
+   if(is.null(pa) & yx == TRUE){
      f1 <- y / (sqrt(pb) * x)
      f2 <- y / (sqrt(P) * x)
      pa <- (f1 + sqrt(P) - f2)^2
      r$min_price <- pa
    }
    
+   # if min_price pa is given and prices are in X/Y format
+   # use inverse and recursion
+   if(!is.null(pa) & yx == FALSE){
+     r$max_price <- match_tokens(x = x, y = y,
+                                 P = P^-1, pb = pa^-1, yx = TRUE)$min_price^-1
+   }
+   
+   # if min_price is NOT given and prices are in X/Y format
+   # use inverse and recursion 
+   if(is.null(pa) & yx == FALSE){
+     r$min_price <- match_tokens(x = x, y = y,
+                                 P = P^-1, pa = pb^-1, yx = TRUE)$max_price^-1
+   }
+  
    return(r)
 }
 
 
-match_min_to_tokens <- function(x, y, P, pb){
-  #' pa = ( 
-  #' ( y / (sqrt(pb)*x) ) + 
-  #'  sqrt(P) - 
-  #'  ( y / (sqrt(P)*x))
-  #'   ) ^2
-  
-   r <- list(
-    amount_x = x,
-     amount_y = y,
-    current_price = P, 
-    required_min_price = NULL,
-    max_price = pb
-  )
-  
-  f1 <- y / (sqrt(pb) * x)
-  f2 <- y / (sqrt(P) * x)
-  
-  pa <- (f1 + sqrt(P) - f2)^2
-  
-  r$required_min_price <- pa
-  
-  return(r)
-  
-}
-
-match_max_to_tokens <- function(x, y, P, pa){
-  #' pa = ( 
-  #' ( y / (sqrt(pb)*x) ) + 
-  #'  sqrt(P) - 
-  #'  ( y / (sqrt(P)*x))
-  #'   ) ^2
-  #'  Solve the above for pb
-  
-   r <- list(
-    amount_x = x,
-     amount_y = y,
-    current_price = P, 
-    min_price = pa,
-    required_max_price = NULL
-  )
-  
-  f1 <- (y^2)/(x^2)
-  f2 <- sqrt(pa) - sqrt(P) + (y/(sqrt(P)*x))
-  
-  pb <- f1 * (f2)^-2
-  
-  r$required_max_price <- pb
-  
-  return(r)
-}
-
 reactable(
   as.data.frame(
-    match_max_to_tokens(x = 100, y = 1000, P = 10, pa = 4)
+    price_all_tokens(x = 100, y = 1000, P = 0.1, pa = NULL, pb = 0.25, yx = FALSE)
   )
 )
 
 ```
-
-Inverting this back to our desire BTC/ETH format:
-
--   x = 100 BTC
--   y = 1000 ETH
--   Current Price, y/x, 10 ETH/BTC => 0.1 BTC/ETH
--   max price 25 ETH/BTC => 0.04 BTC/ETH.
--   min price 4 ETH/BTC => max price 0.25 BTC/ETH
 
 Recall earlier, that the 0.05 - 0.25 range only required 79 BTC and 1000 ETH at a 0.1 price.
 
