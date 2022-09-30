@@ -289,34 +289,79 @@ To get a simple result, let's assume we have 12.549 ETH and we need to know how 
 -   min price (for ETH), pa = 0.05 BTC/ETH (ETH is LOW, you only get 0.05 BTC for 1 ETH, we are 100% ETH at this price)
 -   max price (for ETH), pb = 0.25 BTC/ETH (ETH is HIGH, you get 0.25 BTC for 1 ETH, we are 100% BTC at this price)
 
+We can use the `match_tokens_to_range()` with min price `x = NULL` and noting our 
+price is **not** in y/x (ETH/BTC) format; it is in x/y (BTC/ETH) format. Click the code button 
+to expand this example.
+
 ```{r}
 
-match_x_to_y <- function(y, P, pa, pb){
-  #' Given a current price P, number of tokens y, and price ranges pb and pa
-  #' A required amount of x tokens can be calculated. 
-  #' Lx = x * sqrt(P \* Pb) / ( sqrt(Pb) - sqrt(P) )
-  #' y = Lx * ( sqrt(P) - sqrt(Pa) )
+match_tokens_to_range <- function(x = NULL, y = NULL, P, pa, pb, yx = TRUE){ 
   
-  r <- list(
-    amount_y = y,
+   if(is.null(x) & is.null(y)){
+    stop("amount of token x OR amount of token y must be provided")
+  }
+  
+  if(!is.null(x) & !is.null(y)){
+    stop("one of amount x or amount y should be unknown, NULL")
+  }
+  
+   r <- list(
+    amount_x = NULL,
+    amount_y = NULL,
     current_price = P,
-    min_price = pa, 
-    max_price = pb,
-    required_x = NULL
-    
+    min_price = pa,
+    max_price = pb
   )
   
-  Ly = y * sqrt(P * pb) / ( sqrt(pb) - sqrt(P) )
-  x = Ly * ( sqrt(P) - sqrt(pa) )
-  
-  r$required_x = x
-  
-  return(r)
+   if(!is.null(y)){
+     r$amount_y <- y
+   } else if (!is.null(x)){ 
+     r$amount_x <- x
+     }
+   
+    # if x is provided and prices are in X/Y format 
+   if(!is.null(x) & yx == FALSE){
+     
+     Lx = x * sqrt(P * pb) / ( sqrt(pb) - sqrt(P) )
+     y_ = Lx * ( sqrt(P) - sqrt(pa) )
+     r$amount_y = y_^-1
+   
+     }
+   
+    # if y is provided and prices are in X/Y format
+   if(!is.null(y) & yx == FALSE){
+     Ly = y * sqrt(P * pb) / ( sqrt(pb) - sqrt(P) )
+     x_ = Ly * ( sqrt(P) - sqrt(pa) )
+     
+     r$amount_x <- x_
+   }
+   
+     
+    # if x is provided and prices are in Y/X format 
+   # use swap, inverse, and recursion
+   if(!is.null(x) & yx == TRUE){
+     r$amount_y <- match_tokens_to_range(x = x,
+                                        P = P^-1,
+                                        pa = pb^-1, 
+                                        pb = pa^-1, yx = FALSE)$amount_y
+   }
+   
+   # if y is provided and prices are in Y/X format 
+   # use swap, inverse, and recursion
+   if(!is.null(y) & yx == TRUE){
+    r$amount_x <- match_tokens_to_range(y = y,
+                                        P = P^-1,
+                                        pa = pb^-1, 
+                                        pb = pa^-1, yx = FALSE)$amount_x
+   }
+   
+   return(r)
+   
 }
 
 reactable(
   as.data.frame(
-    match_x_to_y(y = 12.549, P = 0.1, pa = 0.05, pb = 0.25)
+    match_tokens_to_range(x = NULL, y = 12.549, P = 0.1, pa = 0.05, pb = 0.25, yx = FALSE)
   )
 )
 
@@ -324,62 +369,18 @@ reactable(
 
 This range needs 1 BTC to match with 12.549 ETH (this number was chosen on purpose).
 
-To show the process in reverse, if we had 1 BTC and needed to know how much ETH we needed to concentrate into the 0.05 BTC/ETH - 0.25 BTC/ETH range at a 0.1 BTC/ETH Current Price, everything has to be **inverted**.
+Note: This math for matching x to y; or y to x changes based on your unit of account, i.e., if your prices
+are in Y/X (ETH/BTC) or X/Y (BTC/ETH) format. The functions detailed here can handle any direction of pricing as 
+long as the parameters Current Price (P), min price (pa), max price (pb), and price ratio (yx) are match accordingly.
 
--   max ETH price 0.25 BTC/ETH becomes minimum BTC price -> 4 ETH/BTC
--   min ETH price 0.05 BTC/ETH becomes max BTC price -> 20 ETH/BTC
--   price is inverted 0.1 BTC/ETH -> 10 ETH/BTC
 
--   x = 1 BTC
--   y = ?? ETH
--   Current Price, y/x = 10 ETH/BTC
--   min price (for BTC), pa = 4 ETH/BTC (BTC is LOW, you only get 4 ETH per BTC, we are 100% BTC at this price)
--   max price (for BTC), pb = 20 ETH/BTC (BTC is HIGH, you get 5x as much ETH per BTC, we are 100% ETH at this price)
+Given the 0.1 BTC/ETH price, the desired 0.05 - 0.25 range would require ~12.549 ETH per BTC deposited (it scales linearly w/ more BTC given same price and range).
 
-```{r}
-
-match_y_to_x <- function(x, P, pa, pb){
-  #' Given a current price P, number of tokens x, and price ranges pb and pa
-  #' A required amount of y tokens can be calculated. 
-  #' Lx = x * sqrt(P \* Pb) / ( sqrt(Pb) - sqrt(P) )
-  #' y = Lx * ( sqrt(P) - sqrt(Pa) )
-  
-  r <- list(
-    amount_x = x,
-    current_price = P,
-    min_price = pa,
-    max_price = pb,
-    required_y = NULL
-    
-  )
-  
-  Lx = x * sqrt(P * pb) / ( sqrt(pb) - sqrt(P) )
-  y = Lx * ( sqrt(P) - sqrt(pa) )
-  
-  r$required_y = y
-  
-  return(r)
-}
-
-reactable(
-  as.data.frame(
-match_y_to_x(x = 1, # 1 BTC, 
-             P = 10, # 10 ETH per BTC
-             pa = 4, # 4 ETH per BTC, BTC IS LOW
-             pb = 20 # 20 ETH per BTC, BTC is HIGH
-             )
-  )
-)
-
-```
-
-The desired range would require ~12.549 ETH per BTC deposited (it scales linearly w/ more BTC given same price and range).
-
-Your choice of *unit of account* (i.e., choice of price = y/x or x/y) determines how we define minimum and maximum for a range. Whichever way you choose to account for and calculate these ranges, it helps to pick one and stay consistent. In line with the original White Paper, BTC/ETH (i.e., x/y) has been the preferred method unit of account ratio in this paper, but inversions will be noted as needed to align to available math derived from other sources.
+Your choice of *unit of account* (i.e., choice of price = y/x or x/y) determines how we define minimum and maximum for a range. Whichever way you choose to account for and calculate these ranges, it helps to pick one and stay consistent. In line with the original White Paper, BTC/ETH (i.e., x/y) has been the preferred method unit of account ratio in this paper. Formulas from other papers using Y/X will have the inversions abstracted away via functions similar to `match_tokens_to_range()` above.
 
 ## Capital Efficiency & Range Selection
 
-Reviewing the original 100 BTC, 1000 ETH Uni V2 pool with a 0.1 BTC/ETH current price. Concentration to the 0.05 - 0.25 BTC/ETH range and keeping the 0.1 BTC/ETH current price means that 1000 ETH can be matched with *only* `r match_x_to_y(y = 1000, P = 0.1, pb = 0.25, pa = 0.05)$required_x` BTC.
+Reviewing the original 100 BTC, 1000 ETH Uni V2 pool with a 0.1 BTC/ETH current price. Concentration to the 0.05 - 0.25 BTC/ETH range and keeping the 0.1 BTC/ETH current price means that 1000 ETH can be matched with *only* 79.689 BTC.
 
 This is *capital efficiency*. Instead of providing 100 BTC and 1000 ETH to the 0 - Infinite range of Uniswap v2 at 0.1 BTC/ETH each. Uniswap v3 allows for less tokens (1000 ETH, 79.689 BTC) to be used to provide more liquidity (per unit) at the price.
 
@@ -388,7 +389,7 @@ Although in this case the total amount of liquidity is slightly smaller (1000 * 
 ```{r}
 reactable(
   as.data.frame(
-    match_x_to_y(y = 1000, P = 0.1, pa = 0.05, pb = 0.25)
+    match_tokens_to_range(y = 1000, P = 0.1, pa = 0.05, pb = 0.25, yx = FALSE)
   )
 )
 
@@ -405,7 +406,9 @@ Forcefully using all available tokens given a current price and max price with a
 -   max_price = 0.25 BTC/ETH (here, your position is 100% BTC)
 
 We can use the `price_all_tokens()` with min price `pa = NULL` and noting our 
-price is **not** in y/x (ETH/BTC) format; it is in x/y (BTC/ETH) format.
+price is **not** in y/x (ETH/BTC) format; it is in x/y (BTC/ETH) format. Click the code button 
+to expand this example. 
+
 
 ```{r}
 
@@ -455,14 +458,14 @@ price_all_tokens <- function(x, y, P, pa = NULL, pb = NULL, yx = TRUE){
    # if min_price pa is given and prices are in X/Y format
    # use inverse and recursion
    if(!is.null(pa) & yx == FALSE){
-     r$max_price <- match_tokens(x = x, y = y,
+     r$max_price <- price_all_tokens(x = x, y = y,
                                  P = P^-1, pb = pa^-1, yx = TRUE)$min_price^-1
    }
    
    # if min_price is NOT given and prices are in X/Y format
    # use inverse and recursion 
    if(is.null(pa) & yx == FALSE){
-     r$min_price <- match_tokens(x = x, y = y,
+     r$min_price <- price_all_tokens(x = x, y = y,
                                  P = P^-1, pa = pb^-1, yx = TRUE)$max_price^-1
    }
   
@@ -504,14 +507,29 @@ Consider the included image of Uniswap v3 WBTC-ETH 0.3% Pool. With the following
 
 Using the previously defined formulas, let's confirm that the min price 0.006 for this range.
 
-Knowing that minimum is the inversion of maximum, we can use `match_max_to_tokens()` (see code)
+`price_all_tokens(x = 100, y = 1000.44, P = 0.068, pa = NULL, pb = 0.249, yx = FALSE)`
 
 ```{r}
-# yx 
-max_yx <- match_max_to_tokens(x = 100, y = 1000.44, P = 0.068^-1, pa = 0.249^-1)$required_max_price
-
-
+reactable(
+  as.data.frame(
+    price_all_tokens(x = 100, y = 1000.44, P = 0.068, pa = NULL, pb = 0.249, yx = FALSE)
+  )
+)
 ```
+
+With `match_tokens_to_range()` and `price_all_tokens()` we can verify all the functionality of the Uniswap 
+User Interface. 
+
+Want to know how many ETH to match to your 100 BTC in the 0.05 - 0.25 BTC/ETH range?
+`match_tokens_to_range()`.
+
+Want to know what range you need to use all the tokens you have available?
+`price_all_tokens()`. 
+
+Note: if you switch your ratio to Y/X (i.e., ETH per BTC) in the User Interface. These functions all 
+still apply, just use `yx = TRUE` and note the new `Price`, `Min Price` and `Max Price` accordingly.
+
+# Spreading Liquidity 
 
 ```{r}
 min_tick <- get_closest_tick(0.05, tick_spacing = 60, decimal_adjustment = 1e10)$tick
@@ -521,3 +539,4 @@ tick_spread <- seq(min_tick, max_tick, by = 60)
 plot(tick_spread, y = rep(1, length(tick_spread)), type = 'l')
 
 ```
+
