@@ -5,6 +5,7 @@ date: "`r Sys.Date()`"
 output:
   html_document:
     code_folding: hide
+    toc: true
 editor_options: 
   chunk_output_type: console
 ---
@@ -236,23 +237,32 @@ Tick spacing matters significantly and changes by price tier. The USDC-WETH 0.3%
 
 ```{r,  warning=FALSE, message=FALSE}
 
-tick_to_price <- function(tick, decimal_adjustment = 1){
-  sqrt(1.0001)^(2*tick) * decimal_adjustment
+# Assumes price is desired in X/Y format, e.g., WBTC/ETH.
+tick_to_price <- function(tick, decimal_adjustment = 1, yx = FALSE){
+  
+  p <- sqrt(1.0001)^(2*tick) * decimal_adjustment
+  if(yx == TRUE){
+    p <- p^-1
+  }
+  return(p)
 }
 
-get_closest_tick <- function(desired_price, tick_spacing = 60, decimal_adjustment = 1){
+# Assumes price is in X/Y format, e.g., WBTC/ETH
+get_closest_tick <- function(desired_price, tick_spacing = 60, decimal_adjustment = 1, yx = FALSE){
 # base = sqrt(1.0001)
 # y = sqrt(price / decimal_adjustment)
 # base^tick = y
 # tick = log(y, base)
 # price = decimal_adjustment*(base^tick)^2
 
+  # assumes x/y pricing    
+
 r <- list(
   desired_price = desired_price,
   actual_price = NULL,
   tick = NULL
 )
-    
+
 initial_tick <- log( sqrt(desired_price / decimal_adjustment), sqrt(1.0001) )  
 
 if(initial_tick %% tick_spacing == 0){
@@ -262,6 +272,10 @@ if(initial_tick %% tick_spacing == 0){
   final_tick <- round(initial_tick / tick_spacing)*tick_spacing
   r$tick <- final_tick 
   r$actual_price <- sqrt(1.0001)^(2*final_tick) * decimal_adjustment
+}
+
+if(yx == TRUE){
+  r$note <- "v3 assumes X/Y format, your tick may need to be made negative, or price inversed."
 }
 
 return(r)
@@ -505,7 +519,7 @@ Consider the included image of Uniswap v3 WBTC-ETH 0.3% Pool. With the following
 -   Min Price = 0.006 WBTC/ETH
 -   Max Price = 0.249 WBTC/ETH
 
-Using the previously defined formulas, let's confirm that the min price 0.006 for this range.
+Using the previously defined formulas, let's confirm that the min price pa = 0.006 for this range.
 
 `price_all_tokens(x = 100, y = 1000.44, P = 0.068, pa = NULL, pb = 0.249, yx = FALSE)`
 
@@ -531,12 +545,125 @@ still apply, just use `yx = TRUE` and note the new `Price`, `Min Price` and `Max
 
 # Spreading Liquidity 
 
-```{r}
-min_tick <- get_closest_tick(0.05, tick_spacing = 60, decimal_adjustment = 1e10)$tick
-max_tick <- get_closest_tick(0.25, tick_spacing = 60, decimal_adjustment = 1e10)$tick
+To pull all 100 WBTC and 1000 ETH into the pool, with a max price of 0.25 WBTC/ETH range with a current price of 0.1 BTC/ETH
 
-tick_spread <- seq(min_tick, max_tick, by = 60)
+`price_all_tokens(x = 100, y = 1000, P = 0.1, pa = NULL, pb = 0.25, yx = FALSE)`
+
+Requires a minimum price of 0.04.
+
+```{r}
+reactable(
+  as.data.frame(
+    price_all_tokens(x = 100, y = 1000, P = 0.1, pa = NULL, pb = 0.25, yx = FALSE)
+  )
+)
+```
+
+This range of 0.04 - 0.25 WBTC/ETH converted into actual ticks, with a decimal adjustment of 1e10 
+(WBTC has 8 decimals, ETH has 18: 18 - 8 = 10) and 0.3% fee tier tick spacing of 
+60 converts to tick -55200 and tick -36900.
+
+```{r}
+min_tick <- get_closest_tick(0.04, tick_spacing = 60, decimal_adjustment = 10, yx = FALSE)
+max_tick <- get_closest_tick(0.25, tick_spacing = 60, decimal_adjustment = 10,  yx = FALSE)
+
+reactable(
+  rbind.data.frame(
+    min_tick, max_tick
+  )
+)
+
+```
+
+```{r}
+
+tick_spread <- seq(min_tick$tick, max_tick$tick, by = 60)
+
+```
+
+```{r}
+
+  
 plot(tick_spread, y = rep(1, length(tick_spread)), type = 'l')
 
 ```
+
+# Real World Spreading Liquidity Example
+
+Creating a brand new Uniswap v3 Pool on Optimism with a single liquidity position: 
+[MKR/LINK](https://optimistic.etherscan.io/address/0x353ec75f40edb3b794e10bc049532e60d89d5d19) 0.3% Fee Tier 
+with a range of -50100 tick to -39120 tick to prove out the relevant functions.
+
+The pool was initialized with the following:
+
+- x = 0.005 MKR (18 decimals)
+- y = 1.1392 LINK (18 decimals)
+- P = 0.009264495 MKR/LINK
+- pa = 0.00667 (tick -50100)
+- pb = 0.020004 (tick -39120)
+
+This is the *only* position as of Optimism Block # 26514378.
+
+```{r}
+library(gmp) # large numbers library 
+
+price_to_sqrtpx96 <- function(P){
+  # Uniswap stores prices as square roots in 64.96 (64 bits integer, 96 bit fractional)
+  # assume sqrt price is a rational and use gmp big integer
+  
+  gmp::as.bigq(sqrt(P)) * gmp::as.bigz(2)^96
+  
+}
+
+sqrtpX96_to_price <- function(sqrtpX96){
+  p <- as.bigq(sqrtpX96)/as.bigz(2)^96
+  as.numeric(p^2)
+}
+
+# although Uni v3 presents ticks in in X/Y (here, MKR/LINK) format 
+# math in related papers uses P = Y/X
+get_liquidity <- function(x, y, P, pa, pb, yx = FALSE){ 
+  
+  f1 = as.bigq(sqrt(P)) * as.bigq(sqrt(pb))
+  f2 = as.bigq(sqrt(pb)) - as.bigq(sqrt(P))
+  
+  L = x * f1 / f2
+  
+  return( as.bigz(L) )
+}
+
+
+get_liquidity_y <- function(y, P, pb){ 
+  f1 = as.bigq(sqrt(P)) * as.bigq(sqrt(pb))
+  f2 = as.bigq(sqrt(pb)) - as.bigq(sqrt(P))
+  
+  L = y * f1 / f2
+  
+  return( as.bigz(L) )
+}
+
+get_liquidity_x <- function(x, P, pa){ 
+  f1 = as.bigq(sqrt(P)) - as.bigq(sqrt(pa))
+  
+  L = x / f1
+  
+  return( as.bigz(L) )
+  
+  }
+
+x = as.bigz(0.005*1e18) # exact amount integer form 
+y = as.bigz('1139289230675491064') # exact amount integer form 
+# sqrtPriceX96 uint160:  7625888651129286871474510862
+P = 0.009264495 # taken from contract sqrtPriceX96  
+min_tick <- -50100 
+max_tick <- -39120
+pa = tick_to_price(min_tick) # price in x/y format 
+pb = tick_to_price(max_tick)
+
+
+
+```
+
+
+
 

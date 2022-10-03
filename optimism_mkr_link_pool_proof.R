@@ -30,14 +30,40 @@
 # 0.005 * 1e18
 # 5000000000000000
 
-x = 1.139289230675491064 * 1e18 # decimal adjustment
-y = 0.004999 * 1e18 # decimal adjustment
-P = 0.0092645
-pa = 0.0066726
-pb = 0.020004
+y = as.bigq(1.139289230675491064)*1e18 # decimal adjustment
+x = as.bigq(0.005)*1e18  # decimal adjustment
+P = 0.009264495
+min_tick <- -50100
+max_tick <- -39120
+pa = 0.006672574
+pb = 0.02000437
 
-L = as.bigz("343255264548669212") # actual liquidity 
+sqrtpX96 =  as.bigz('7625888651129286871474510862')
+tick = -46818
 
-L1 = x*(sqrt(P)*sqrt(pb))/( sqrt(pb) - sqrt(P)) # within 0.02% of L
-L2 = y / ( sqrt(P)-sqrt(pa) )
-L2
+tick_to_price(tick, decimal_adjustment = 1, yx = FALSE)
+
+library(gmp)
+L = as.bigz("343255264548669212") # actual liquidity from contract  
+
+get_liquidity_y <- function(y, P, pb){ 
+  f1 = as.bigq(sqrt(P)) * as.bigq(sqrt(pb))
+  f2 = as.bigq(sqrt(pb)) - as.bigq(sqrt(P))
+  
+  L = y * f1 / f2
+  
+  return( as.bigz(L) )
+}
+
+get_liquidity_y(y, P, pb)
+
+get_liquidity_x <- function(x, P, pa){ 
+  f1 = as.bigq(sqrt(P)) - as.bigq(sqrt(pa))
+  
+  L = x / f1
+  
+  return( as.bigz(L) )
+  
+  }
+
+get_liquidity_x(x, P, pa)
