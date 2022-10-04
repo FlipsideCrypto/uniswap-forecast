@@ -240,10 +240,13 @@ Tick spacing matters significantly and changes by price tier. The USDC-WETH 0.3%
 # Assumes price is desired in X/Y format, e.g., WBTC/ETH.
 tick_to_price <- function(tick, decimal_adjustment = 1, yx = FALSE){
   
-  p <- sqrt(1.0001)^(2*tick) * decimal_adjustment
+  p <- sqrt(1.0001)^(2*tick) 
   if(yx == TRUE){
     p <- p^-1
   }
+  
+  p <- p * decimal_adjustment
+  
   return(p)
 }
 
@@ -543,7 +546,7 @@ Want to know what range you need to use all the tokens you have available?
 Note: if you switch your ratio to Y/X (i.e., ETH per BTC) in the User Interface. These functions all 
 still apply, just use `yx = TRUE` and note the new `Price`, `Min Price` and `Max Price` accordingly.
 
-# Spreading Liquidity 
+# Price and Liquidity Tracking 
 
 To pull all 100 WBTC and 1000 ETH into the pool, with a max price of 0.25 WBTC/ETH range with a current price of 0.1 BTC/ETH
 
@@ -588,23 +591,48 @@ plot(tick_spread, y = rep(1, length(tick_spread)), type = 'l')
 
 ```
 
-# Real World Spreading Liquidity Example
+# Real World Price & Liquidity Tacking
 
-Creating a brand new Uniswap v3 Pool on Optimism with a single liquidity position: 
-[MKR/LINK](https://optimistic.etherscan.io/address/0x353ec75f40edb3b794e10bc049532e60d89d5d19) 0.3% Fee Tier 
-with a range of -50100 tick to -39120 tick to prove out the relevant functions.
+To validate the math, I created a brand new Uniswap v3 Pool on Optimism: [MKR/LINK](https://optimistic.etherscan.io/address/0x353ec75f40edb3b794e10bc049532e60d89d5d19) 0.3% Fee Tier.
+
+Initially, this pool had a single liquidity position with a min tick of -50100 tick 
+and max tick of -39120 tick to prove out the relevant functions.
 
 The pool was initialized with the following:
 
 - x = 0.005 MKR (18 decimals)
 - y = 1.1392 LINK (18 decimals)
-- P = 0.009264495 MKR/LINK
+- P = 0.009264495 MKR/LINK (the market rate at time of creation)
 - pa = 0.00667 (tick -50100)
 - pb = 0.020004 (tick -39120)
 
-This is the *only* position as of Optimism Block # 26514378.
+This is (purposefully) the *only* position as of Optimism Block # 26514378.
 
-```{r}
+![Real World Optimism Pool for MKR/LINK](proxy_pool_optimism_1.png){height="100%" width="100%"}
+
+## Tracking Price
+
+Unlike Uniswap v2, where `x * y = k` and `Price = x/y` are all tracked directly. Uniswap v3 tracks 
+the square root of liquidity as `L = sqrt(k)` and square root of price `sqrt(P)` in complex forms.
+
+![Current Price from Read Contract on Etherscan](proxy_pool_price_1.png){height="50%" width="50%"}
+
+The sqrtPriceX96 is the price in unsigned integer 160 bit form. The first 64 bits are the integer, the next
+96 are the fractional part. `price_to_sqrtpx96()` and `sqrtpx96_to_price()` are available for smoothly
+converting between these forms. 
+
+As noted previously, different math sources and different pools freely switch between pricing in X/Y and Y/X form.
+When you convert a sqrtpX96 to a standard price, be aware of what pool you are using and be prepared to 
+invert prices (e.g., mutiplying ticks by -1) to ensure things are making sense at the *pool* level.
+
+Some Uni v3 pools will have ticks as positive numbers, others as negative numbers. This is all a result
+of how they choose token0 (X) and token1 (Y); some pools alphabetize the token contract address, others 
+are configured based on the pool creator's input. 
+
+This is troublesome, but functions have been prepared to accept `yx = TRUE` or `yx = FALSE` parameters
+to handle them according to what the user thinks is more logical for understanding the pool.
+
+```{r, warn = FALSE, message = FALSE}
 library(gmp) # large numbers library 
 
 price_to_sqrtpx96 <- function(P){
@@ -615,42 +643,139 @@ price_to_sqrtpx96 <- function(P){
   
 }
 
-sqrtpX96_to_price <- function(sqrtpX96){
-  p <- as.bigq(sqrtpX96)/as.bigz(2)^96
+sqrtpx96_to_price <- function(sqrtpX96){
+  p <- as.bigq(sqrtpX96)/(as.bigz(2)^96)
+  
+  # expect a small amount of precision loss, it's unavoidable.
   as.numeric(p^2)
 }
 
+```
+
+Using `sqrtpx96_to_price()` to convert 7625888651129286871474510862 to price, we can
+see it matches the tick -46818.
+
+```{r}
+reactable(
+  data.frame(
+  "sqrtpx96_price" = sqrtpx96_to_price('7625888651129286871474510862'),
+  "tick_price" = tick_to_price(-46818)
+  )
+)
+```
+
+As you work with Uni v3, you will notice that precision is regularly lost. Generally,
+these functions will be within 0.005% of each other if not even closer. 
+
+### Note on Decimal Adjustment
+
+Note: This was easy to do given that MKR and LINK both have the same amount of decimals.
+When pools don't have the same amount of decimals (e.g., a USDC/ETH pool) decimal adjustments (and 
+careful understanding of whether pricing is X/Y or Y/X) are important to confirm a logical result. 
+
+For illustrative purposes consider the USDC (6 decimal) / WETH (18 decimal) pool. 
+At time of snapshot, ETH was ~$1351.
+
+![USDC-WETH from Read Contract on Etherscan](usdc_weth_pool_price_1.png){height="50%" width="50%"}
+
+To get this logical output requires understanding that this pool is in ETH/USDC format and that there is 
+a decimal difference between these coins. 
+
+`sqrtpx96_to_price('2155294299616414878655275019653269')` returns 740,037,952.
+```{r}
+reactable(
+  data.frame(
+    "raw_price" = sqrtpx96_to_price('2155294299616414878655275019653269')
+  )
+)
+```
+
+This is (1) not decimal adjusted, divide by 1e12 (18 decimals - 6 decimals = 12 decimals). 
+And then inverse to get the human readable 1,351 USDC per ETH. Note the tick price and sqrtpx96 
+prices lose some precision but are very close (within 0.003%). 
+
+```{r}
+reactable(
+  data.frame(
+      "tick_price" = tick_to_price(204232),
+    "px96_price" = sqrtpx96_to_price('2155294299616414878655275019653269'),
+    "px96_adjust_decimals" = sqrtpx96_to_price('2155294299616414878655275019653269')/1e12,
+    "invert_adjusted" = (sqrtpx96_to_price('2155294299616414878655275019653269')/1e12)^-1
+  )
+)
+```
+
+## Tracking Liquidity
+
+Here, the liquidity of the proxy pool (MKR/LINK on Optimism) is 343,255,264,548,669,212.
+
+![Liquidity from Read Contract on Etherscan](proxy_pool_liquidity_1.png){height="50%" width="50%"}
+
+This is easier to understand because we know in advance this pool has a *single* position. The 
+-50100 to -39120 range seeded. Thus, the liquidity of the pool and the liquidity provided by this 
+position are the same.
+
+As we will see later when calculating swaps in complex pools, pools with more than one (*live*) position
+will have more significantly more liquidity. 
+
+To calculate this contract level liquidity, we use `get_liquidity()` and provide all 
+the relevant information in its most contract level form, i.e., we adjust our tokens by their decimal values.
+
+For ETH we would use wei (1 ETH = 1e18 wei); and for ERC20 tokens like MKR and LINK we also use 1e18.
+Knowing that these numbers are very large, we will use the `gmp` package to handle arbitrarily large numbers.
+
+- x = 0.005 * 1e18 MKR
+- y = 1.139289230675491064 * 1e18 LINK (this is the exact amount at the smallest available unit).
+- P = 0.009264495 X/Y taken from the contract sqrtPriceX96. 
+- pa, min_tick = -50100
+- pb, max_tick = -39120
+
+Liquidity is calculated based on position(s) being *live*. If a position is entirely out of range, 
+it is 100% in 1 asset, and is thus not earning fees nor providing liquidity. When the 
+price P is between min price pa and max price pb, you calculate liquidity as the *minimum* of 
+the liquidity provided by asset X and the liquidity provided by asset Y.
+
+This avoids some issues with precision, submitting tokens in a block that may contain 
+transactions that change the price of the pool within the same block, and some attack 
+vectors on manipulating liquidity and the geometric oracle built into Uni v3.
+
+```{r}
 # although Uni v3 presents ticks in in X/Y (here, MKR/LINK) format 
 # math in related papers uses P = Y/X
 get_liquidity <- function(x, y, P, pa, pb, yx = FALSE){ 
   
-  f1 = as.bigq(sqrt(P)) * as.bigq(sqrt(pb))
-  f2 = as.bigq(sqrt(pb)) - as.bigq(sqrt(P))
-  
-  L = x * f1 / f2
-  
-  return( as.bigz(L) )
-}
-
-
-get_liquidity_y <- function(y, P, pb){ 
-  f1 = as.bigq(sqrt(P)) * as.bigq(sqrt(pb))
-  f2 = as.bigq(sqrt(pb)) - as.bigq(sqrt(P))
-  
-  L = y * f1 / f2
-  
-  return( as.bigz(L) )
-}
-
-get_liquidity_x <- function(x, P, pa){ 
-  f1 = as.bigq(sqrt(P)) - as.bigq(sqrt(pa))
-  
-  L = x / f1
-  
-  return( as.bigz(L) )
-  
+  # if prices are in Y/X format, invert them and act as X/Y
+  if(yx == TRUE){
+    return(get_liquidity(x, y, P = P^-1, pa = pb^-1, pb = pa^-1, yx = FALSE))
   }
+  
+  # include minimum of Lx and Ly as done in contract
+  r <- list(
+    Lx = NULL,
+    Ly = NULL,
+    minL = NULL
+  )
+   
+  y_f1 <- as.bigq(sqrt(P)) * as.bigq(sqrt(pb))
+  y_f2 <- as.bigq(sqrt(pb)) - as.bigq(sqrt(P))
+  Ly <- y * y_f1 / y_f2
+  
+  # get big integer
+  r$Ly <- as.bigz(Ly)
+  
+  x_f1 <- as.bigq(sqrt(P)) - as.bigq(sqrt(pa))
+  Lx <- x / x_f1
+    # get big integer
+  r$Lx <- as.bigz(Lx)
+  
+  r$minL <- as.bigz(min(Ly, Lx))
+  
+  return(r)
+}
 
+```
+
+```{r}
 x = as.bigz(0.005*1e18) # exact amount integer form 
 y = as.bigz('1139289230675491064') # exact amount integer form 
 # sqrtPriceX96 uint160:  7625888651129286871474510862
@@ -660,10 +785,11 @@ max_tick <- -39120
 pa = tick_to_price(min_tick) # price in x/y format 
 pb = tick_to_price(max_tick)
 
+liquidity <- get_liquidity(x = x, y = y, P = P, pa = pa, pb = pb, yx = FALSE)
 
-
+reactable(
+  as.data.frame(
+lapply(liquidity, as.character) # can't data frame big integers natively. 
+  )
+)
 ```
-
-
-
-

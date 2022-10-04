@@ -46,6 +46,7 @@ tick_to_price(tick, decimal_adjustment = 1, yx = FALSE)
 library(gmp)
 L = as.bigz("343255264548669212") # actual liquidity from contract  
 
+
 get_liquidity_y <- function(y, P, pb){ 
   f1 = as.bigq(sqrt(P)) * as.bigq(sqrt(pb))
   f2 = as.bigq(sqrt(pb)) - as.bigq(sqrt(P))
