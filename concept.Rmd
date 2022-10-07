@@ -793,3 +793,99 @@ lapply(liquidity, as.character) # can't data frame big integers natively.
   )
 )
 ```
+
+Again, precision is lost due to how Price was provided as a decimal and large integers are used here.
+But they are within 0.000005% of each other.
+
+### Swap within a Tick
+
+The liquidity `r liquidity$minL` is the amount of active liquidity among all relevant positions- here, just one.
+
+The current price tick from the contract is -46818.
+That means the current tick is whichever tick precedes -46818: 
+
+-46860 to -46800.
+
+```{r}
+tick_spread <- seq(min_tick, max_tick, by = 60)
+current_tick <- -46818 # from contract 
+
+liquidity_table <- data.frame(
+  tick_spread = tick_spread,
+  liquidity_in_tick = as.numeric(liquidity$minL/length(tick_spread)),
+  active = FALSE
+)
+
+# -1 because ticks are negative.  
+previous_tick_index <- which(liquidity_table$tick_spread > current_tick)[1] - 1
+
+liquidity_table$active[previous_tick_index] <- TRUE
+
+reactable(
+  liquidity_table[50:59, ] 
+)
+
+preceding_tick <- -46860
+next_tick <- -46800
+
+```
+
+This current tick range corresponds to prices: 
+
+```{r}
+reactable(
+  data.frame(
+    "tick" = c("preceding","current","next"),
+    "tick_val" = c(preceding_tick, current_tick, next_tick),
+    "price" = tick_to_price(c(preceding_tick, current_tick, next_tick))
+  )
+)
+
+```
+
+To calculate a swap that does *not* result in a change of active ticks (which could change 
+liquidity) we use the available liquidity and the amount of X provided (i.e., added to the pool) to calculate the effect in price. 
+
+This effect in price then allows for calculation of how much Y is returned (i.e., removed from the pool).
+
+```{r}
+
+tick_max <- function(L, P, pa, pb, yx = TRUE){
+
+  x_f1 = sqrt(pb) - sqrt(P)
+  x_f2 = sqrt(P)*sqrt(pb)
+  
+  max_x = L*x_f1/x_f2
+  max_y = L* (sqrt(P) - sqrt(pa))
+  
+  return(
+    list(
+      max_x = max_x,
+      max_y = max_y
+    )
+  )
+  
+}
+
+tick_amount_max_delta <- function(L, P, Pn){
+  # Change in sqrt(P) = Change in Y / Liquidity
+  
+  P1 <- price_to_sqrtpx96(P)
+  P2 <- price_to_sqrtpx96(Pn)
+  
+  dP <- P1 - P2
+  
+  dY <- dP*L
+  return(dY)
+}
+
+L <- liquidity_table$liquidity_in_tick[liquidity_table$active == TRUE]
+P <- tick_to_price(-46818)
+Pn <- tick_to_price(-46800)
+
+  
+```
+
+
+### Swap across Ticks
+
