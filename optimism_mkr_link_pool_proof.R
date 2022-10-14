@@ -30,9 +30,9 @@
 # 0.005 * 1e18
 # 5000000000000000
 
-y = as.bigq(1.139289230675491064)*1e18 # decimal adjustment
-x = as.bigq(0.005)*1e18  # decimal adjustment
-P = 0.009264495
+x = as.bigq(1.139289230675491064)*1e18 # decimal adjustment, token 0 LINK x
+y = as.bigq(0.005)*1e18  # decimal adjustment token 1 MKR y 
+P = 0.009264495 # Y/X Format, x = Token 0 
 min_tick <- -50100
 max_tick <- -39120
 pa = 0.006672574
@@ -47,24 +47,24 @@ library(gmp)
 L = as.bigz("343255264548669212") # actual liquidity from contract  
 
 
-get_liquidity_y <- function(y, P, pb){ 
+get_liquidity_x <- function(x, P, pb){ 
   f1 = as.bigq(sqrt(P)) * as.bigq(sqrt(pb))
   f2 = as.bigq(sqrt(pb)) - as.bigq(sqrt(P))
   
-  L = y * f1 / f2
+  L = x* f1 / f2
   
   return( as.bigz(L) )
 }
 
-get_liquidity_y(y, P, pb)
+get_liquidity_x(x, P, pb)
 
-get_liquidity_x <- function(x, P, pa){ 
+get_liquidity_y <- function(y, P, pa){ 
   f1 = as.bigq(sqrt(P)) - as.bigq(sqrt(pa))
   
-  L = x / f1
+  L = y / f1
   
   return( as.bigz(L) )
   
   }
 
-get_liquidity_x(x, P, pa)
+get_liquidity_y(y, P, pa)

@@ -23,8 +23,8 @@ liq2 = as.bigz('343255264548669212')
 sqrtpx96_1 = as.bigz('7625888651129286871474510862')
 sqrtpx96_2 = as.bigz('7625888585730332125670982418')
 
-dy = -0.000000000283340352
 dx = 0.000000030675491064
+dy = -0.000000000283340352
 
 deltaP <- sqrtpx96_2 - sqrtpx96_1
 ideltaP <- sqrtpx96_2^-1 - sqrtpx96_1^-1
@@ -36,12 +36,9 @@ fix_y <- function(y, decimal_adjustment = 1e18){
   as.numeric( y / (as.bigz(2)^96) ) / decimal_adjustment
 }
 fix_x <- function(x, decimal_adjustment = 1e18, fee = 0.003){
- as.numeric(x * as.bigz(2^96))/1e18 / (1 - fee)
- 
+  as.numeric(x * as.bigz(2^96))/1e18 / (1 - fee)
+  
 }
-
-dxa * (1 - fee) * 1e18 / (as.bigz(2)^96)
-
 
 delta_y_adjusted <- fix_y(y = delta_y)
 delta_x_adjusted <- fix_x(x = delta_x)
@@ -50,7 +47,6 @@ delta_maker
 delta_y_adjusted
 delta_link
 delta_x_adjusted
-
 
 #-----
 
@@ -80,7 +76,7 @@ swap_within_tick <- function(L, sqrtpx96, dx = NULL, dy = NULL,
   
   # adjust real dx or dy to 96 int & adjust for fees
   if(!is.null(dx)){
-  dxa <- as.bigq(dx) * (1 - fee) * decimal_x / (as.bigz(2)^96)
+    dxa <- as.bigq(dx) * (1 - fee) * decimal_x / (as.bigz(2)^96)
   }
   if(!is.null(dy)){
     dya <- as.bigq(dy) * c96 * decimal_y
@@ -103,24 +99,23 @@ swap_within_tick <- function(L, sqrtpx96, dx = NULL, dy = NULL,
   }
   
   if(!is.null(dx)){
-  # iP_new - iP = dx/L
-  # iP_new = dx/L + iP
-  
-  iP_new = dxa/L + iP
-  P_new = iP_new^-1
-  
-  # dy = (P_new - P)*L
-  dya = (P_new - P)*L
-  
-  # convert back to real units 
-  dy = as.numeric( dya / c96 ) / decimal_y
-  
-  r$dx = dx
-  r$dy = dy
-  r$price2 <- as.bigz(P_new)
-  }
-  
-  if(!is.null(dy)){
+    # iP_new - iP = dx/L
+    # iP_new = dx/L + iP
+    
+    iP_new = dxa/L + iP
+    P_new = iP_new^-1
+    
+    # dy = (P_new - P)*L
+    dya = (P_new - P)*L
+    
+    # convert back to real units 
+    dyz = as.numeric( dya / c96 ) / decimal_y
+    
+    r$dx = dx
+    r$dy = dyz
+    r$price2 <- as.bigz(P_new)
+    
+  } else if(!is.null(dy)){
     # dy =  (P_new - P)*L
     # P_new = dy/L + P 
     
@@ -131,9 +126,9 @@ swap_within_tick <- function(L, sqrtpx96, dx = NULL, dy = NULL,
     dxa = (iP_new - iP)*L
     
     # convert to real units 
-    dx = as.numeric(dxa * c96) / decimal_x
+    dxz = as.numeric(dxa * c96) / decimal_x
     
-    r$dx <- dx
+    r$dx <- dxz
     r$dy <- dy
     r$price2 <- as.bigz(P_new)
   }
@@ -142,4 +137,6 @@ swap_within_tick <- function(L, sqrtpx96, dx = NULL, dy = NULL,
   
 }
 
+
+swap_within_tick(L = L, sqrtpx96 = P, dx = dx)
 

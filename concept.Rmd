@@ -578,19 +578,6 @@ reactable(
 
 ```
 
-```{r}
-
-tick_spread <- seq(min_tick$tick, max_tick$tick, by = 60)
-
-```
-
-```{r}
-
-  
-plot(tick_spread, y = rep(1, length(tick_spread)), type = 'l')
-
-```
-
 # Real World Price & Liquidity Tacking
 
 To validate the math, I created a brand new Uniswap v3 Pool on Optimism: [MKR/LINK](https://optimistic.etherscan.io/address/0x353ec75f40edb3b794e10bc049532e60d89d5d19) 0.3% Fee Tier.
@@ -600,9 +587,9 @@ and max tick of -39120 tick to prove out the relevant functions.
 
 The pool was initialized with the following:
 
-- x = 0.005 MKR (18 decimals)
-- y = 1.1392 LINK (18 decimals)
-- P = 0.009264495 MKR/LINK (the market rate at time of creation)
+- x = 1.1392 LINK (18 decimals)
+- y = 0.005 MKR (18 decimals)
+- Price in Y/X format: 0.009264495 MKR/LINK (the market rate at time of creation)
 - pa = 0.00667 (tick -50100)
 - pb = 0.020004 (tick -39120)
 
@@ -612,7 +599,7 @@ This is (purposefully) the *only* position as of Optimism Block # 26514378.
 
 ## Tracking Price
 
-Unlike Uniswap v2, where `x * y = k` and `Price = x/y` are all tracked directly. Uniswap v3 tracks 
+Unlike Uniswap v2, where `x * y = k` and `Price = y/x` are all tracked directly. Uniswap v3 tracks 
 the square root of liquidity as `L = sqrt(k)` and square root of price `sqrt(P)` in complex forms.
 
 ![Current Price from Read Contract on Etherscan](proxy_pool_price_1.png){height="50%" width="50%"}
@@ -653,7 +640,7 @@ sqrtpx96_to_price <- function(sqrtpX96){
 ```
 
 Using `sqrtpx96_to_price()` to convert 7625888651129286871474510862 to price, we can
-see it matches the tick -46818.
+see it matches the tick -46818. 
 
 ```{r}
 reactable(
@@ -663,6 +650,9 @@ reactable(
   )
 )
 ```
+
+These prices coincide with Y/X pricing, where token 0 (X) is LINK, and token 1 (Y) is MKR. Thus,
+these are MKR / LINK prices.
 
 As you work with Uni v3, you will notice that precision is regularly lost. Generally,
 these functions will be within 0.005% of each other if not even closer. 
@@ -724,9 +714,9 @@ the relevant information in its most contract level form, i.e., we adjust our to
 For ETH we would use wei (1 ETH = 1e18 wei); and for ERC20 tokens like MKR and LINK we also use 1e18.
 Knowing that these numbers are very large, we will use the `gmp` package to handle arbitrarily large numbers.
 
-- x = 0.005 * 1e18 MKR
-- y = 1.139289230675491064 * 1e18 LINK (this is the exact amount at the smallest available unit).
-- P = 0.009264495 X/Y taken from the contract sqrtPriceX96. 
+- x = 1.139289230675491064 * 1e18 LINK (this is the exact amount at the smallest available unit).
+- y = 0.005 * 1e18 MKR
+- P = 0.009264495 Y/X taken from the contract sqrtPriceX96. 
 - pa, min_tick = -50100
 - pb, max_tick = -39120
 
@@ -742,11 +732,11 @@ vectors on manipulating liquidity and the geometric oracle built into Uni v3.
 ```{r}
 # although Uni v3 presents ticks in in X/Y (here, MKR/LINK) format 
 # math in related papers uses P = Y/X
-get_liquidity <- function(x, y, P, pa, pb, yx = FALSE){ 
+get_liquidity <- function(x, y, P, pa, pb, yx = TRUE){ 
   
   # if prices are in Y/X format, invert them and act as X/Y
-  if(yx == TRUE){
-    return(get_liquidity(x, y, P = P^-1, pa = pb^-1, pb = pa^-1, yx = FALSE))
+  if(yx == FALSE){
+    return(get_liquidity(x, y, P = P^-1, pa = pb^-1, pb = pa^-1, yx = TRUE))
   }
   
   # include minimum of Lx and Ly as done in contract
@@ -756,17 +746,17 @@ get_liquidity <- function(x, y, P, pa, pb, yx = FALSE){
     minL = NULL
   )
    
-  y_f1 <- as.bigq(sqrt(P)) * as.bigq(sqrt(pb))
-  y_f2 <- as.bigq(sqrt(pb)) - as.bigq(sqrt(P))
-  Ly <- y * y_f1 / y_f2
+  x_f1 <- as.bigq(sqrt(P)) * as.bigq(sqrt(pb))
+  x_f2 <- as.bigq(sqrt(pb)) - as.bigq(sqrt(P))
+  Lx <- x * x_f1 / x_f2
   
   # get big integer
-  r$Ly <- as.bigz(Ly)
-  
-  x_f1 <- as.bigq(sqrt(P)) - as.bigq(sqrt(pa))
-  Lx <- x / x_f1
-    # get big integer
   r$Lx <- as.bigz(Lx)
+  
+  y_f1 <- as.bigq(sqrt(P)) - as.bigq(sqrt(pa))
+  Ly <- y / y_f1
+    # get big integer
+  r$Ly <- as.bigz(Ly)
   
   r$minL <- as.bigz(min(Ly, Lx))
   
@@ -776,8 +766,8 @@ get_liquidity <- function(x, y, P, pa, pb, yx = FALSE){
 ```
 
 ```{r}
-x = as.bigz(0.005*1e18) # exact amount integer form 
-y = as.bigz('1139289230675491064') # exact amount integer form 
+x = as.bigz('1139289230675491064') # exact amount integer form LINK, token 0
+y = as.bigz(0.005*1e18) # exact amount integer form MKR, token 1
 # sqrtPriceX96 uint160:  7625888651129286871474510862
 P = 0.009264495 # taken from contract sqrtPriceX96  
 min_tick <- -50100 
@@ -785,7 +775,7 @@ max_tick <- -39120
 pa = tick_to_price(min_tick) # price in x/y format 
 pb = tick_to_price(max_tick)
 
-liquidity <- get_liquidity(x = x, y = y, P = P, pa = pa, pb = pb, yx = FALSE)
+liquidity <- get_liquidity(x = x, y = y, P = P, pa = pa, pb = pb, yx = TRUE)
 
 reactable(
   as.data.frame(
@@ -802,29 +792,13 @@ But they are within 0.000005% of each other.
 The liquidity `r liquidity$minL` is the amount of active liquidity among all relevant positions- here, just one.
 
 The current price tick from the contract is -46818.
-That means the current tick is whichever tick precedes -46818: 
+That means the current range is starts at the nearest tick spacing before -46818: 
 
 -46860 to -46800.
 
 ```{r}
 tick_spread <- seq(min_tick, max_tick, by = 60)
 current_tick <- -46818 # from contract 
-
-liquidity_table <- data.frame(
-  tick_spread = tick_spread,
-  liquidity_in_tick = as.numeric(liquidity$minL/length(tick_spread)),
-  active = FALSE
-)
-
-# -1 because ticks are negative.  
-previous_tick_index <- which(liquidity_table$tick_spread > current_tick)[1] - 1
-
-liquidity_table$active[previous_tick_index] <- TRUE
-
-reactable(
-  liquidity_table[50:59, ] 
-)
-
 preceding_tick <- -46860
 next_tick <- -46800
 
@@ -844,48 +818,280 @@ reactable(
 ```
 
 To calculate a swap that does *not* result in a change of active ticks (which could change 
-liquidity) we use the available liquidity and the amount of X provided (i.e., added to the pool) to calculate the effect in price. 
+liquidity) we use the available liquidity and the amount of X provided (i.e., added to the pool) to calculate the effect in price.
 
 This effect in price then allows for calculation of how much Y is returned (i.e., removed from the pool).
 
+Purposefully doing a very small swap of `dx = 0.000000030675491064 LINK` results in the same liquidity 
+but a new price and an output of `dy = -0.000000000283340352354316 MKR`. Notice it is negative because 
+this MKR is *removed* from the liquidity pool. The 0.3% fee is taken out upfront, such that the pool 
+experiences a change of `0.00000003058346 LINK` and the liquidity provider (i.e., the single position)
+earns `0.000000000092026473192 LINK`. Adding these back together equals the LINK removed from the seller.
+
+Notice the price change from `762588864...` to `762588858...` By giving the pool LINK and removing MKR from the pool (i.e., selling LINK), the price in MKR/LINK decreases: 1 LINK gets less MKR.
+
 ```{r}
 
-tick_max <- function(L, P, pa, pb, yx = TRUE){
-
-  x_f1 = sqrt(pb) - sqrt(P)
-  x_f2 = sqrt(P)*sqrt(pb)
+swap_within_tick <- function(L, sqrtpx96, dx = NULL, dy = NULL, 
+                             decimal_x = 1e18,
+                             decimal_y = 1e18, 
+                             fee = 0.003){
+  # Change in price = Delta(Y) / L 
+  # change in Inverse(Price) = Delta(X)/L
   
-  max_x = L*x_f1/x_f2
-  max_y = L* (sqrt(P) - sqrt(pa))
+  # price in *square root* 64.96 form 
+  L = as.bigz(L)
+  P = as.bigz(sqrtpx96)
+  c96 = (as.bigz(2)^96)
+  # inverse price
+  iP = P^-1
   
-  return(
-    list(
-      max_x = max_x,
-      max_y = max_y
-    )
+  # adjust real dx or dy to 96 int & adjust for fees
+  if(!is.null(dx)){
+    dxa <- as.bigq(dx) * (1 - fee) * decimal_x / c96
+  }
+  if(!is.null(dy)){
+    dya <- as.bigq(dy) * c96 * decimal_y
+  }
+  
+  r = list(
+    liquidity = L,
+    dx = NULL,
+    dy = NULL,
+    price1 = P,
+    price2 = NULL,
+    fee = NULL
   )
   
+  if(is.null(dx) & is.null(dy)){
+    stop("A change in x or y is required to use liquidity")
+  }
+  
+  if(!is.null(dx) & !is.null(dy)){
+    stop("Only 1 swap can be noted")
+  }
+  
+  if(!is.null(dx)){
+    # iP_new - iP = dx/L
+    # iP_new = dx/L + iP
+    
+    iP_new = dxa/L + iP
+    P_new = iP_new^-1
+    
+    # dy = (P_new - P)*L
+    dya = (P_new - P)*L
+    
+    # convert back to real units 
+    dyz = as.numeric( dya / c96 ) / decimal_y
+    
+    r$dx = dx * (1 - fee)
+    r$dy = dyz
+    r$price2 <- as.bigz(P_new)
+    r$fee = fee * dx
+    
+  } else if(!is.null(dy)){
+    # dy =  (P_new - P)*L
+    # P_new = dy/L + P 
+    
+    P_new = dya/L + P 
+    
+    iP_new = P_new^-1
+    
+    dxa = (iP_new - iP)*L
+    
+    # convert to real units 
+    dxz = as.numeric(dxa * c96) / decimal_x
+    
+    r$dx <- dxz 
+    r$dy <- dy * (1 - fee)
+    r$price2 <- as.bigz(P_new)
+    r$fee <- fee * dy
+  }
+  
+  return(r)
+  
 }
 
-tick_amount_max_delta <- function(L, P, Pn){
-  # Change in sqrt(P) = Change in Y / Liquidity
-  
-  P1 <- price_to_sqrtpx96(P)
-  P2 <- price_to_sqrtpx96(Pn)
-  
-  dP <- P1 - P2
-  
-  dY <- dP*L
-  return(dY)
-}
+swap_xy <- swap_within_tick(L = liquidity$minL,
+                 sqrtpx96 = price_to_sqrtpx96(P), 
+                 dx = 0.000000030675491064, dy = NULL)
 
-L <- liquidity_table$liquidity_in_tick[liquidity_table$active == TRUE]
-P <- tick_to_price(-46818)
-Pn <- tick_to_price(-46800)
+reactable(
+  data.frame(
+    'liquidity' = as.character(swap_xy$liquidity), 
+    'dx' = as.character(swap_xy$dx),
+    'dx_fee' = as.character(swap_xy$fee),
+    'dx_plus_fee' = as.character(swap_xy$dx + swap_xy$fee),
+    'dy' = as.character(swap_xy$dy),
+    'initial_price' = as.character(swap_xy$price1),
+    'final_price' = as.character(swap_xy$price2)
+  )
+)
 
-  
 ```
 
+This perfectly aligns to the real world transaction on Optimism [here](https://optimistic.etherscan.io/tx/0x48bbeb4fd7e6f04950e24929314a4730a62528e6da1d61d378ad9599bf442fd6).
+
+
+Showing the swap in reverse, adding the MKR instead of removing it (i.e., selling MKR to the pool), shows a MKR fee of `0.0000000000008500211 MKR` and the pool returns `-0.00000003058346 LINK`. 
+The liquidity is the same, but the final price moves in the other direction (selling MKR to the pool 
+increases the )
+
+```{r}
+swap_yx <- swap_within_tick(L = liquidity$minL,
+                 sqrtpx96 = price_to_sqrtpx96(P), 
+                 dx = NULL, 
+                 dy = 0.000000000283340352354316)
+
+reactable(
+  data.frame(
+    'liquidity' = as.character(swap_yx$liquidity), 
+    'dy' = as.character(swap_yx$dy),
+    'dy_fee' = as.character(swap_yx$fee),
+    'dy_plus_fee' = as.character(swap_yx$dy + swap_yx$fee),
+    'dx' = as.character(swap_yx$dx),
+    'initial_price' = as.character(swap_yx$price1),
+    'final_price' = as.character(swap_yx$price2)
+  )
+)
+```
+
+Notice the price change from `762588864...` to `762588871...` By giving the pool MKR and removing LINK from the pool (i.e., selling MKR), the price in MKR/LINK increases: 1 LINK gets more MKR.
 
 ### Swap across Ticks
+
+Swaps across ticks work by using the liquidity available between the current price and 
+the next tick range (i.e., the next tick given tick spacing); then re-calculating liquidity at this tick, and continuing to the next range; repeating this process until the swap is complete.
+
+Recall that liquidity (L) and price (the square root Px96) *only change one at a time*. 
+Within a tick range, the price changes and liquidity is fixed. When crossing a tick, the price pauses while liquidity is recalculated.
+
+Said again: 
+
+1. Given Liquidity, L; current price, P; and a desired swap, dx or dy (token 0 or token 1).
+2. Calculate the swap size, DX_tick that moves the price to the next tickspacing
+3a. If the desired swap size dx <= DX_tick, complete the swap and move the price to P1, leaving liquidity the same, and the swap is complete.
+3b. If the desired swap size dx > DX_tick, complete part of swap (dx_leftover = dx - DX_tick) and at the new tick spacing, re-calculate Liquidity, L_new using the new price P_new at that tick spacing.
+4. Given L_new, P_new, and dx_leftover, repeat steps 1-3 until 3a is reached.
+
+The `size_price_change_in_tick()` function is used for step (2); given Liquidity and two prices (current and target) it returns the swap size needed to change the price in desired form (dx, amount of x needed or dy, amount of y needed). NOTE: This is only accurate up to the next tick spacing! This function will be used 
+iteratively with `get_liquidity()` to methodically complete swaps.
+
+Here `size_price_change_in_tick()` matches `dx_plus_fee and dy` above, to confirm the math all aligns.
+Note: because fees are taken in the currency used in the swap, this returns the trade size *before* fees 
+are removed. Use `swap_within_tick()` to get a breakdown of fees. 
+
+This may make more sense when realizing to move the price a single direction implicitly requires 
+fees in a single token. Calling `dx = FALSE` in our example returns a negative value. This is MKR (token 1, y)
+*removed* from the pool. To remove tokens from a pool means you add the other token! It's this other 
+token where fees are removed.
+
+```{r}
+
+# includes fee 
+size_price_change_in_tick <- function(L, sqrtpx96, sqrtpx96_target, dx = TRUE, 
+                              decimal_adjustment = 1e18, fee = 0.003){
+ # given a liquidity and known new price, how much of a change in dx is required to get to the new price
+  
+  # price in *square root* 64.96 form 
+  L = as.bigz(L)
+  P = as.bigz(sqrtpx96)
+  P_target = as.bigz(sqrtpx96_target)
+  c96 = as.bigz(2)^96
+  # inverse price
+  iP = P^-1
+  iP_target = P_target^-1
+   
+  if(dx == TRUE){
+    dxa = (iP_target - iP) * L
+   dx = as.bigq(dxa) / (1 - fee) / decimal_adjustment * c96
+   return(as.numeric(dx))
+  } else { 
+    dya = (P_target - P)*L
+    dy = dya / c96 / decimal_adjustment
+    return(as.numeric(dy))
+    }
+}
+
+# trade x, LINK 
+size_price_change_in_tick(L = "343255263830421644",
+                  sqrtpx96 = "7625888646051765535543132160",
+                  sqrtpx96_target = '7625888580652810738255925731', 
+                  dx = TRUE)
+# trade y, MKR
+size_price_change_in_tick(L = "343255263830421644",
+                  sqrtpx96 = "7625888646051765535543132160",
+                  sqrtpx96_target = '7625888580652810738255925731', 
+                  dx = FALSE)
+
+```
+
+After the previous transaction, the pool on Optimism has a new price (note: very small <0.0001% precision loss compared to calculated target from previous example):
+
+![Current Price from Read Contract on Etherscan](proxy_pool_price_2.png){height="50%" width="50%"}
+
+sqrtPriceX96: 7625888585730332125670982418
+current tick: -46819
+
+The ticks surrounding this price given 60 tick spacing are: 
+
+- -46860
+- -46800
+
+```{r}
+get_closest_tick(sqrtpx96_to_price("7625888585730332125670982418"))$tick + c(-60, 0)
+```
+
+Let's identify how to move the price from the current price to the -46800 tick.
+
+```{r}
+
+size_price_change_in_tick(L = "343255263830421644",
+                  sqrtpx96 = "7625888585730332125670982418",
+                  sqrtpx96_target = price_to_sqrtpx96(tick_to_price(-46800)), 
+                  dx = TRUE)
+
+```
+
+To move the price to -46800, requires *removing* (notice the negative) (-)0.003217664 LINK (x, token 0), i.e.,
+adding MKR. To keep it simple, let's assume we want to sell LINK for MKR and move price to -46860.
+
+```{r}
+size_price_change_in_tick(L = "343255263830421644",
+                  sqrtpx96 = "7625888585730332125670982418",
+                  sqrtpx96_target = price_to_sqrtpx96(tick_to_price(-46860)), 
+                  dx = TRUE)
+```
+
+To move the price to -46860 requires *adding** (i.e., selling) (+)0.007519051 LINK (x, token 0).
+
+This is the final tick in the range, so at this point, Liquidity will need to be recalculated.
+To calculate liquidity requires knowing the amount of each token (x, y) in the pool,
+the current price, and range of the position (this is still a 1 position sized pool).
+
+First let's match how much MKR is removed by a sale of 0.007519051 LINK with `swap_within_tick()`.
+
+```{r}
+
+swap_within_tick(L = "343255263830421644",
+                  sqrtpx96 = "7625888585730332125670982418", 
+                 dx = 0.007519051)$dy
+
+```
+
+Adding 0.007519051 LINK from this pool removes (-)0.00006930554 MKR which exactly matches
+the Uniswap main app website calculator's 0.0000693055 *Expected Output*.
+
+![Confirming with Uniswap Calc.](proxy_pool_swap_to_end_of_tick.png){height="50%" width="50%"}
+Let's complete this trade and confirm we can recalculate liquidity and price.
+
+[This transaction](https://optimistic.etherscan.io/tx/0x411c6c3796cd0124e9af77bde51b241a0aebaac29269c6d682f30adc4b281860) shows the trade aligns to the expected input/out.
+
+
+
+```{r}
+
+get_liquidity()
+
+```
 
