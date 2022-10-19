@@ -1087,11 +1087,31 @@ Let's complete this trade and confirm we can recalculate liquidity and price.
 
 [This transaction](https://optimistic.etherscan.io/tx/0x411c6c3796cd0124e9af77bde51b241a0aebaac29269c6d682f30adc4b281860) shows the trade aligns to the expected input/out.
 
+Also, we can see the price has changed to the expected tick.
 
+![Current Price from Read Contract on Etherscan](proxy_pool_price_3.png){height="50%" width="50%"}
+
+The new balances of tokens include: 
+
+- x: 1.146808312350982128 LINK (18 decimals)
+- y: 0.00493069417466594 MKR (18 decimals)
+- Price: `r sqrtpx96_to_price('7609891887904192334730581214')` 
+- pa, min_tick = -50100 (pool has only a single position)
+- pb, max_tick = -39120 (pool has only a single position)
 
 ```{r}
-
-get_liquidity()
+reactable(
+  as.data.frame(
+    lapply(
+      get_liquidity(x = as.bigz(1.146808312350982128*1e18),
+                    y = as.bigz(0.00493069417466594*1e18),
+                    P = sqrtpx96_to_price('7609891887904192334730581214'),
+                    pa = tick_to_price(-50100),
+                    pb = tick_to_price(-39120),
+                    yx = TRUE), as.character
+    )
+  )
+)
 
 ```
 
