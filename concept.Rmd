@@ -723,15 +723,14 @@ Knowing that these numbers are very large, we will use the `gmp` package to hand
 Liquidity is calculated based on position(s) being *live*. If a position is entirely out of range, 
 it is 100% in 1 asset, and is thus not earning fees nor providing liquidity. When the 
 price P is between min price pa and max price pb, you calculate liquidity as the *minimum* of 
-the liquidity provided by asset X and the liquidity provided by asset Y.
+the liquidity provided by asset X and the liquidity provided by asset Y relative to the current price.
 
 This avoids some issues with precision, submitting tokens in a block that may contain 
 transactions that change the price of the pool within the same block, and some attack 
 vectors on manipulating liquidity and the geometric oracle built into Uni v3.
 
 ```{r}
-# although Uni v3 presents ticks in in X/Y (here, MKR/LINK) format 
-# math in related papers uses P = Y/X
+
 get_liquidity <- function(x, y, P, pa, pb, yx = TRUE){ 
   
   # if prices are in Y/X format, invert them and act as X/Y
@@ -740,27 +739,74 @@ get_liquidity <- function(x, y, P, pa, pb, yx = TRUE){
   }
   
   # include minimum of Lx and Ly as done in contract
-  r <- list(
-    Lx = NULL,
-    Ly = NULL,
-    minL = NULL
-  )
-   
-  x_f1 <- as.bigq(sqrt(P)) * as.bigq(sqrt(pb))
-  x_f2 <- as.bigq(sqrt(pb)) - as.bigq(sqrt(P))
-  Lx <- x * x_f1 / x_f2
+
+  # formal math in Uni v3 implemented w/ sqrt px96 price formats 
+
+getLiq_amount0 <- function(mintickx96, maxtickx96, amount0){
+    if( mintickx96 >  maxtickx96){
+        temp = mintickx96
+        mintickx96 <- maxtickx96
+        maxtickx96 <- temp
+    }
+    intermediate = mintickx96*maxtickx96/as.bigz(2^96)
+    
+    return(amount0*intermediate / (maxtickx96 - mintickx96))
+}
+
+getLiq_amount1 <- function(mintickx96, maxtickx96, amount1){
+    if( mintickx96 >  maxtickx96){
+        temp = mintickx96
+        mintickx96 <- maxtickx96
+        maxtickx96 <- temp
+    }
+    
+    return(amount1*as.bigz(2^96)/(maxtickx96 - mintickx96))
+}
+
+getLiq <- function(current_pricex96, mintickx96, maxtickx96, amount0, amount1){
+    if( mintickx96 >  maxtickx96){
+        temp = mintickx96
+        mintickx96 <- maxtickx96
+        maxtickx96 <- temp
+    }
+    
+    if(current_pricex96 <= mintickx96){
+        liq = getLiq_amount0(mintickx96, maxtickx96, amount0)
+    } else if (current_pricex96 < maxtickx96){
+        liq0 <- getLiq_amount0(current_pricex96, maxtickx96, amount0)
+        liq1 <- getLiq_amount1(mintickx96, current_pricex96, amount1)
+        
+        #ifelse() cannot handle subassignment of big rationals 
+        if(liq0 < liq1){
+          liq <- liq0
+        } else {
+          liq <- liq1
+        }
+        
+    } else { 
+        liq = getLiq_amount1(mintickx96, maxtickx96, amount1)
+    }
+    
+    return(liq)
+    
+}
+
+# always return integer 
+Lx = as.bigz(getLiq_amount0(mintickx96 = price_to_sqrtpx96(pa), 
+                    maxtickx96 = price_to_sqrtpx96(pb), 
+                    amount0 = x))
+
+Ly = as.bigz(getLiq_amount1(mintickx96 = price_to_sqrtpx96(pa), 
+                    maxtickx96 = price_to_sqrtpx96(pb), 
+                    amount1 = y))
+
+L = as.bigz(getLiq(current_pricex96 = price_to_sqrtpx96(P), 
+              mintickx96 = price_to_sqrtpx96(pa),
+              maxtickx96 = price_to_sqrtpx96(pb),
+              amount0 = x,
+              amount1 = y))
   
-  # get big integer
-  r$Lx <- as.bigz(Lx)
-  
-  y_f1 <- as.bigq(sqrt(P)) - as.bigq(sqrt(pa))
-  Ly <- y / y_f1
-    # get big integer
-  r$Ly <- as.bigz(Ly)
-  
-  r$minL <- as.bigz(min(Ly, Lx))
-  
-  return(r)
+return(L)
 }
 
 ```
@@ -789,7 +835,7 @@ But they are within 0.000005% of each other.
 
 ## Swap within a Tick
 
-The liquidity `r liquidity$minL` is the amount of active liquidity among all relevant positions- here, just one.
+The liquidity `r liquidity` is the amount of active liquidity among all relevant positions- here, just one.
 
 The current price tick from the contract is -46818.
 That means the current range is starts at the nearest tick spacing before -46818: 
@@ -912,7 +958,7 @@ swap_within_tick <- function(L, sqrtpx96, dx = NULL, dy = NULL,
   
 }
 
-swap_xy <- swap_within_tick(L = liquidity$minL,
+swap_xy <- swap_within_tick(L = liquidity,
                  sqrtpx96 = price_to_sqrtpx96(P), 
                  dx = 0.000000030675491064, dy = NULL)
 
@@ -939,7 +985,7 @@ The liquidity is the same, but the final price moves in the other direction (sel
 increases the amount of MKR in the pool, reducing the amount of LINK in the pool, and increases the amount of MKR per LINK; i.e., the price.)
 
 ```{r}
-swap_yx <- swap_within_tick(L = liquidity$minL,
+swap_yx <- swap_within_tick(L = liquidity,
                  sqrtpx96 = price_to_sqrtpx96(P), 
                  dx = NULL, 
                  dy = 0.000000000283340352354316/0.997)
@@ -1239,7 +1285,7 @@ for(i in 1:nrow(position_tbl)){
                                              P = position_tbl$price[i],
                                              pa = position_tbl$min_price[i],
                                              pb = position_tbl$max_price[i], 
-                                             yx = TRUE)$minL)
+                                             yx = TRUE))
   
 }
 
@@ -1275,8 +1321,8 @@ find_recalculation_price <- function(positions, current_price, price_up = TRUE){
   if(price_up == TRUE){
     
     # possible for a min_tick to be > current_price if position is out of range 
-    min_index <- which.min(abs(positions$min_price > current_price))
-    max_index <- which.min(abs(positions$max_price - current_price))
+    #min_index <- which.min(abs(positions$min_price > current_price))
+    index <- which.min(abs(positions$max_price - current_price))
     
     return(positions$max_price[index])
   
