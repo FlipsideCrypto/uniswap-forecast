@@ -1038,7 +1038,8 @@ token where fees are removed.
 # includes fee 
 size_price_change_in_tick <- function(L, sqrtpx96, sqrtpx96_target, dx = TRUE, 
                               decimal_adjustment = 1e18, fee = 0.003){
- # given a liquidity and known new price, how much of a change in dx is required to get to the new price
+ # given a liquidity and known new price, how much of a change is required to get to the new price
+ # Includes fees!
   
   # price in *square root* 64.96 form 
   L = as.bigz(L)
@@ -1055,7 +1056,7 @@ size_price_change_in_tick <- function(L, sqrtpx96, sqrtpx96_target, dx = TRUE,
    return(as.numeric(dx))
   } else { 
     dya = (P_target - P)*L
-    dy = dya / c96 / decimal_adjustment
+    dy = dya / (1 - fee) / c96 / decimal_adjustment
     return(as.numeric(dy))
     }
 }
@@ -1316,21 +1317,17 @@ the direction of the trade to identify which price requires a re-calculation of 
 
 ```{r}
 find_recalculation_price <- function(positions, current_price, price_up = TRUE){ 
+
+  p <- positions[, c("min_price","max_price")]
   
-  # note absolute value in case prices are negative
+  # if price going up, get the closest available price above current price
   if(price_up == TRUE){
-    
-    # possible for a min_tick to be > current_price if position is out of range 
-    #min_index <- which.min(abs(positions$min_price > current_price))
-    index <- which.min(abs(positions$max_price - current_price))
-    
-    return(positions$max_price[index])
-  
+     closest_price <- p[p > current_price][which.min(p[p > current_price])]
     } else { 
-      
-    index <- which.min(abs(current_price - positions$min_price))
-    return(positions$min_price[index])
+    closest_price <- p[p < current_price][which.max(p[p < current_price])]
     }
+  
+  return(closest_price)
 }
 
 recalculation_price <- find_recalculation_price(position_tbl, position_tbl$price[1], price_up = TRUE)
@@ -1440,10 +1437,86 @@ reactable(
 
 We now have all the components required to identify swap prices and fees paid across
 liquidity providers given a set of available liquidity. The final step is to perform swaps
-where liquidity must *change* mid-swap. 
+where liquidity must *change* mid-swap.
 
 With the available components this is now easy: 
 
 1. Given a set of liquidity and a desired swap amount (and direction), calculate the the 
-recalculation_price: the price at which 
+recalculation_price: the price at which liquidity must be recalculated.
+2. If the swap would exceed that recalculation price, swap *up to* that price
+and distribute the fees (so far) across available liquidity. Otherwise proceed as if in 1 large tick.
+3. Pause with the excess swap amount, and re-calculate liquidity given new active positions.
+4. Repeat 1-3 given new liquidity(s).
+
+Recall the current positions and their ranges, with the updated current price: 
+
+```{r}
+position_tbl_final <- position_tbl[, c("position", "min_price","price", "max_price","liquidity")]
+position_tbl_final$price <- sqrtpx96_to_price(mkr_sale$price2)
+
+reactable(
+  position_tbl_final
+)
+
+```
+
+Let's consider a a trade that goes beyond position 1; where the max price is `0.0074335...`.
+For example, a sale of 0.0005 MKR again (which will *increase* the price, i.e. more MKR per LINK).
+
+1. Given a set of positions, identify which are *active*
+
+```{r}
+current_price <- position_tbl_final$price[1]
+
+active <- logical(nrow(position_tbl_final))
+
+for(i in 1:nrow(position_tbl_final)){
+if(current_price >= position_tbl_final$min_price[i] & 
+   current_price <= position_tbl_final$max_price[i]){
+  active[i] <- TRUE
+}
+}
+position_tbl_final$active <- active 
+
+reactable(
+  position_tbl_final
+)
+
+```
+
+2. Given a swap direction (here price going up, i.e. MKR per LINK will go up because we are 
+selling MKR to the pool) identify the next price that will change our active positions (and thus cause
+liquidity to be recalculated).
+
+```{r}
+recalc_price <-find_recalculation_price(positions = position_tbl_final, 
+                                        current_price = current_price, 
+                                        price_up = TRUE)
+```
+
+3. With this price, identify the max swap size available before recalculation using the 
+*active* liquidity.
+
+```{r}
+active_L = sum(as.bigz(position_tbl_final$liquidity[position_tbl_final$active]))
+
+recalc_amt_mkr = size_price_change_in_tick(L = active_L, 
+                          sqrtpx96 = price_to_sqrtpx96(current_price), 
+                          sqrtpx96_target = price_to_sqrtpx96(recalc_price), 
+                          dx = FALSE, # return mkr to sell
+                          fee = 0.003)
+
+reactable(
+  data.frame(
+    liquidity = as.character(active_L),
+    price = current_price, 
+    recalc_price = recalc_price,
+    mkr_to_sell = recalc_amt_mkr
+  )
+)
+
+```
+
+Update 
+4. 
 
