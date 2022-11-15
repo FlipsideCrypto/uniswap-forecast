@@ -1517,6 +1517,299 @@ reactable(
 
 ```
 
-Update 
-4. 
+4. Perform a swap of the defined size. Distribute fees across the active positions. Update the price to the recalc 
+price.
 
+```{r}
+leftover_mkr <- 0.0005 - recalc_amt_mkr 
+fee_tbl <- position_tbl_final
+fee <- recalc_amt_mkr * 0.003
+fee_tbl$mkr_fees = 0 
+mkr_fees <- as.numeric(fee * as.bigq(fee_tbl$liquidity) / sum(as.bigq(fee_tbl$liquidity)))
+fee_tbl$mkr_fees <- fee_tbl$mkr_fees + mkr_fees
+
+fee_tbl$price <- recalc_price
+
+reactable(
+  fee_tbl
+)
+
+```
+
+5. Update the liquidity active status knowing that price is going up so we compare max price.
+
+```{r}
+
+fee_tbl$active <- !(fee_tbl$price >= fee_tbl$max_price)
+
+reactable(
+  fee_tbl
+)
+
+```
+
+6. Find the next recalc price and identify how much MKR would be sold to get to that price.
+
+```{r}
+
+updated_position_tbl <- position_tbl_final[fee_tbl$active, ]
+
+recalc_price <- find_recalculation_price(positions = updated_position_tbl, 
+                                        current_price = fee_tbl$price[1], 
+                                        price_up = TRUE)
+active_L <- sum(as.bigz(updated_position_tbl$liquidity))
+
+current_price = fee_tbl$price[1]
+recalc_amt_mkr2 = size_price_change_in_tick(L = active_L, 
+                          sqrtpx96 = price_to_sqrtpx96(current_price), 
+                          sqrtpx96_target = price_to_sqrtpx96(recalc_price), 
+                          dx = FALSE, # return mkr to sell
+                          fee = 0.003)
+
+reactable(
+  data.frame(
+     liquidity = as.character(active_L),
+    price = current_price, 
+    recalc_price = recalc_price,
+    mkr_to_sell = recalc_amt_mkr2,
+    leftover_mkr = leftover_mkr
+  )
+)
+
+```
+
+Here, we can see the leftover amount 0.00297 MKR is less than the MKR needed to reach the next recalc price. So we are almost done.
+
+7. Perform a swap of the defined size. Distribute fees across the active positions. Update the price to new price.
+
+```{r}
+
+fee <- leftover_mkr * 0.003
+mkr_fees <- as.numeric(fee * as.bigq(fee_tbl$liquidity) * fee_tbl$active / 
+                         sum( as.bigq(fee_tbl$liquidity)*fee_tbl$active )
+                       )
+fee_tbl$mkr_fees <- fee_tbl$mkr_fees + mkr_fees
+
+
+new_price <- swap_within_tick(L = active_L, sqrtpx96 = price_to_sqrtpx96(current_price), dy = leftover_mkr, fee = 0.003)$price2
+
+fee_tbl$price <- sqrtpx96_to_price(new_price)
+reactable(
+  fee_tbl
+)
+
+```
+
+We can confirm the swap all adds up by summing the fees and dividing by the fee rate; and also get the total amount of LINK removed by changing the liquidity mid swap.
+
+```{r}
+
+L1 <- sum(as.bigz(position_tbl_final$liquidity))
+L2 <- sum(as.bigz(updated_position_tbl$liquidity))
+
+link1 <- swap_within_tick(L = L1, 
+                          sqrtpx96 = price_to_sqrtpx96(position_tbl_final$price[1]),
+                          dy = recalc_amt_mkr, fee = 0.003)$dx
+link2 <- swap_within_tick(L = L2,
+                          sqrtpx96 = price_to_sqrtpx96(current_price) , 
+                          dy = leftover_mkr, fee = 0.003)$dx
+
+reactable(
+  data.frame(
+    total_mkr_fees = sum(fee_tbl$mkr_fees),
+    total_mkr_sold = sum(fee_tbl$mkr_fees)/0.003,
+    total_link_received = abs(link1 + link2),
+    original_price = position_tbl_final$price[1],
+    final_price =  sqrtpx96_to_price(new_price),
+    avg_price = 0.0005/abs(link1 + link2)
+  )
+)
+
+```
+
+## Validation 
+
+Given the initial status of the proxy pool on Optimism with contract level data identified 
+with perfect precision, let's confirm a real sale of 0.0005 MKR will match the expected results.
+
+- Current Price: 
+
+![Status of Pool prior to final validation of cross-position swap](proxy_pool_validation_6.png){width="50%"}
+Our estimated liquidity is within 0.009% of actual (this is due to differences in discrete math and lack of usage of Chinese Remainder Theorem in the R implementation causing precision loss).
+
+```{r}
+validation_initial <- position_tbl[, c("position", "min_tick", "max_tick", 
+                                       "min_price", "price", "max_price",
+                                       "liquidity")]
+reactable(
+  data.frame(
+    estimated_div_actual_liq = as.numeric(
+      sum(as.bigz(validation_initial$liquidity)) / as.bigz('363887625690661420')
+    )
+  )
+)
+
+```
+
+Using the exact price provided by the contract shows this validation position table:
+
+```{r}
+validation_initial$price <- sqrtpx96_to_price('6786861222905019303556225263')
+
+validation_positions <- validation_initial %>% mutate(
+    active = ifelse(price >= min_price & price <= max_price, TRUE, FALSE)
+)
+
+reactable(
+  validation_positions
+)
+
+```
+
+Combining past checks to create the following functions: 
+
+- `check_positions()`: updates a position table's active flag to filter available liquidity for a given price.
+- `swap_across_ticks()`: Give a position table and a desired swap size, it iterates through identifying the recalculation price, swapping to that price, checking the positions, and restarting until the swap is complete.
+
+```{r}
+
+check_positions <- function(ptbl, P){
+  if( !("min_price" %in% colnames(ptbl)) | !("max_price" %in% colnames(ptbl))){
+    stop("Cannot find min_price and max_price columns.")
+  }
+  
+  ptbl <- ptbl %>% mutate(
+    active = ifelse(P > min_price & P < max_price, TRUE, FALSE)
+  )
+  return(ptbl)
+}
+
+swap_across_ticks <- function(ptbl, sqrtpx96, 
+                              fee_tbl = NULL, 
+                              trade_record = NULL,
+                              dx = NULL, 
+                              dy = NULL, 
+                              decimal_x = 1e18, 
+                              decimal_y = 1e18, 
+                              fee = 0.003){
+  
+ if(is.null(dx) & is.null(dy)){
+    stop("A change in x or y is required to use liquidity")
+  }
+  
+  if(!is.null(dx) & !is.null(dy)){
+    stop("Only 1 swap can be done at a time")
+  }
+  
+  # if dx is null; we're selling dy, which means price is going up! 
+  # (P = Y/X; more Y is more P)
+  if(is.null(dx)){
+    
+    amount <- dy
+    price <- sqrtpx96_to_price(sqrtpX96 = sqrtpx96)
+    update_ptbl <- check_positions(ptbl, price)
+    
+        
+    # record fees separately 
+    # if it is blank assume this is a fresh swap and make the fee tbl
+    if(is.null(fee_tbl)){
+      fee_tbl <-  update_ptbl[, c("position","liquidity", "active")]
+      fee_tbl$yfee <- 0
+      
+      # otherwise refresh the active positions but retain any previous fee
+    } else { 
+      yfee = fee_tbl$yfee
+      fee_tbl <-  update_ptbl[,c("position","liquidity", "active")]
+      fee_tbl$yfee <- yfee
+      }
+    
+    recalc_price <- find_recalculation_price(positions = update_ptbl, 
+                                        current_price = price, 
+                                        price_up = TRUE)
+    
+    # sum liquidity in active positions 
+    current_L <- sum(as.bigz(update_ptbl$liquidity[update_ptbl$active]))  
+    
+    # maximum change without recalc
+    max_y <- size_price_change_in_tick(
+      L = current_L, 
+      sqrtpx96 = price_to_sqrtpx96(price), 
+      sqrtpx96_target = price_to_sqrtpx96(recalc_price), 
+      dx = FALSE, # return dy to sell
+      fee = fee)
+    
+    # if you can sell without recalculation; swap within tick 
+    if(max_y >= amount){
+      
+     swap = swap_within_tick(L = current_L, sqrtpx96 = price_to_sqrtpx96(price), 
+                      dy = amount, 
+                      decimal_x = decimal_x, 
+                      decimal_y = decimal_y, 
+                      fee = fee)
+      
+     fee_tbl$yfee <- fee_tbl$yfee + as.numeric(
+      swap$fee * fee_tbl$active * as.bigq(fee_tbl$liquidity) / 
+        sum(as.bigq(fee_tbl$liquidity)[fee_tbl$active])
+      )
+     
+     # If no previous trade record is provided make a new one and return it
+     # this was a swap within a tick, not across them.
+     if(is.null(trade_record)){
+       
+        trade_record <- list(
+       ptbl = ptbl,
+       p1 = swap$price1,
+       p2 = swap$price2,
+       dy_in = swap$dy,
+       dy_fee = swap$fee,
+       dx_out = swap$dx,
+       fee_tbl = fee_tbl
+     )
+     }
+     
+     # you're done; return the results.
+     return(trade_record)
+
+         
+     # swap as much as you can and repeat process
+    } else { 
+      
+      leftover = amount - max_y
+      
+      # swap max y 
+      # track leftover 
+       swap = swap_within_tick(L = current_L, 
+                               sqrtpx96 = price_to_sqrtpx96(price), 
+                      dy = max_y, 
+                      decimal_x = decimal_x, 
+                      decimal_y = decimal_y, 
+                      fee = fee)
+      
+       # attribute fees 
+     fee_tbl$yfee <- fee_tbl$yfee + as.numeric(
+      swap$fee * fee_tbl$active * as.bigq(fee_tbl$liquidity) / 
+        sum(as.bigq(fee_tbl$liquidity)[fee_tbl$active])
+      )
+     
+     # UPDATE past trade record if it exists 
+     # or make new one
+     # call the function again with new information including *adding* trade records 
+     
+      
+      }
+    
+    # else we're selling dx, price is going down 
+    # (P = Y/X, more X is less P)
+  } else { 
+    amount <- dx
+    price <- sqrtpx96_to_price(sqrtpX96 = sqrtpx96)
+    recalc_price <- find_recalculation_price(positions = ptbl, 
+                                        current_price = price, 
+                                        price_up = FALSE)
+    
+    }
+  
+  
+}
+
+```
