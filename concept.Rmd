@@ -1639,7 +1639,7 @@ Our estimated liquidity is within 0.009% of actual (this is due to differences i
 
 ```{r}
 validation_initial <- position_tbl[, c("position", "min_tick", "max_tick", 
-                                       "min_price", "price", "max_price",
+                                       "min_price", "max_price",
                                        "liquidity")]
 reactable(
   data.frame(
@@ -1654,10 +1654,10 @@ reactable(
 Using the exact price provided by the contract shows this validation position table:
 
 ```{r}
-validation_initial$price <- sqrtpx96_to_price('6786861222905019303556225263')
+contract_price <- sqrtpx96_to_price('6786861222905019303556225263')
 
 validation_positions <- validation_initial %>% mutate(
-    active = ifelse(price >= min_price & price <= max_price, TRUE, FALSE)
+    active = ifelse(contract_price >= min_price & contract_price <= max_price, TRUE, FALSE)
 )
 
 reactable(
@@ -1693,7 +1693,7 @@ swap_across_ticks <- function(ptbl, sqrtpx96,
                               decimal_y = 1e18, 
                               fee = 0.003){
   
- if(is.null(dx) & is.null(dy)){
+  if(is.null(dx) & is.null(dy)){
     stop("A change in x or y is required to use liquidity")
   }
   
@@ -1709,7 +1709,7 @@ swap_across_ticks <- function(ptbl, sqrtpx96,
     price <- sqrtpx96_to_price(sqrtpX96 = sqrtpx96)
     update_ptbl <- check_positions(ptbl, price)
     
-        
+    
     # record fees separately 
     # if it is blank assume this is a fresh swap and make the fee tbl
     if(is.null(fee_tbl)){
@@ -1721,11 +1721,11 @@ swap_across_ticks <- function(ptbl, sqrtpx96,
       yfee = fee_tbl$yfee
       fee_tbl <-  update_ptbl[,c("position","liquidity", "active")]
       fee_tbl$yfee <- yfee
-      }
+    }
     
     recalc_price <- find_recalculation_price(positions = update_ptbl, 
-                                        current_price = price, 
-                                        price_up = TRUE)
+                                             current_price = price, 
+                                             price_up = TRUE)
     
     # sum liquidity in active positions 
     current_L <- sum(as.bigz(update_ptbl$liquidity[update_ptbl$active]))  
@@ -1733,82 +1733,139 @@ swap_across_ticks <- function(ptbl, sqrtpx96,
     # maximum change without recalc
     max_y <- size_price_change_in_tick(
       L = current_L, 
-      sqrtpx96 = price_to_sqrtpx96(price), 
+      sqrtpx96 = sqrtpx96, 
       sqrtpx96_target = price_to_sqrtpx96(recalc_price), 
       dx = FALSE, # return dy to sell
+      decimal_adjustment = decimal_y,
       fee = fee)
     
     # if you can sell without recalculation; swap within tick 
     if(max_y >= amount){
       
-     swap = swap_within_tick(L = current_L, sqrtpx96 = price_to_sqrtpx96(price), 
-                      dy = amount, 
-                      decimal_x = decimal_x, 
-                      decimal_y = decimal_y, 
-                      fee = fee)
+      swap = swap_within_tick(L = current_L,
+                              sqrtpx96 = price_to_sqrtpx96(price), 
+                              dy = amount, 
+                              decimal_x = decimal_x, 
+                              decimal_y = decimal_y, 
+                              fee = fee)
       
-     fee_tbl$yfee <- fee_tbl$yfee + as.numeric(
-      swap$fee * fee_tbl$active * as.bigq(fee_tbl$liquidity) / 
-        sum(as.bigq(fee_tbl$liquidity)[fee_tbl$active])
+      # attribute fees to positions 
+      fee_tbl$yfee <- fee_tbl$yfee + as.numeric(
+        swap$fee * fee_tbl$active * as.bigq(fee_tbl$liquidity) / 
+          sum(as.bigq(fee_tbl$liquidity)[fee_tbl$active])
       )
-     
-     # If no previous trade record is provided make a new one and return it
-     # this was a swap within a tick, not across them.
-     if(is.null(trade_record)){
-       
+      
+      # If no previous trade record is provided make a new one and return it
+      # this was a swap within a tick, not across them.
+      if(is.null(trade_record)){
+        
         trade_record <- list(
-       ptbl = ptbl,
-       p1 = swap$price1,
-       p2 = swap$price2,
-       dy_in = swap$dy,
-       dy_fee = swap$fee,
-       dx_out = swap$dx,
-       fee_tbl = fee_tbl
-     )
-     }
-     
-     # you're done; return the results.
-     return(trade_record)
-
-         
-     # swap as much as you can and repeat process
+          ptbl = update_ptbl,
+          new_price = swap$price2,
+          dy_in = swap$dy,
+          dy_fee = swap$fee,
+          dx_out = swap$dx,
+          fee_tbl = fee_tbl
+        )
+      } else { 
+        
+        # get the original trade record and original fee_tbl 
+        tr = trade_record 
+        ft = trade_record$fee_tbl
+        
+        # add previous fees from record to latest fees and active positions
+        fee_tbl$yfee = ft$yfee + fee_tbl$yfee
+        
+        # update accordingly
+        trade_record <- list(
+          ptbl = update_ptbl,
+          new_price = swap$price2,
+          dy_in = tr$dy_in + swap$dy,
+          dy_fee = tr$dy_fee + swap$fee,
+          dx_out = tr$dx_out + swap$dx,
+          fee_tbl = fee_tbl
+        )
+      }
+      
+      # you're done; return the results.
+      return(trade_record)
+      
+      
+      # else swap as much as you can and repeat process
     } else { 
       
       leftover = amount - max_y
       
       # swap max y 
       # track leftover 
-       swap = swap_within_tick(L = current_L, 
-                               sqrtpx96 = price_to_sqrtpx96(price), 
-                      dy = max_y, 
-                      decimal_x = decimal_x, 
-                      decimal_y = decimal_y, 
-                      fee = fee)
+      swap = swap_within_tick(L = current_L, 
+                              sqrtpx96 = price_to_sqrtpx96(price), 
+                              dy = max_y, 
+                              decimal_x = decimal_x, 
+                              decimal_y = decimal_y, 
+                              fee = fee)
       
-       # attribute fees 
-     fee_tbl$yfee <- fee_tbl$yfee + as.numeric(
-      swap$fee * fee_tbl$active * as.bigq(fee_tbl$liquidity) / 
-        sum(as.bigq(fee_tbl$liquidity)[fee_tbl$active])
+      # attribute fees to position
+      fee_tbl$yfee <- fee_tbl$yfee + as.numeric(
+        swap$fee * fee_tbl$active * as.bigq(fee_tbl$liquidity) / 
+          sum(as.bigq(fee_tbl$liquidity)[fee_tbl$active])
       )
-     
-     # UPDATE past trade record if it exists 
-     # or make new one
-     # call the function again with new information including *adding* trade records 
-     
       
+      # UPDATE past trade record if it exists 
+      # or make new one
+      
+      if(is.null(trade_record)){
+        
+        trade_record <- list(
+          ptbl = update_ptbl,
+          new_price = swap$price2,
+          dy_in = swap$dy,
+          dy_fee = swap$fee,
+          dx_out = swap$dx,
+          fee_tbl = fee_tbl
+        )
+      } else { 
+        # get the original trade record and original fee_tbl 
+        tr = trade_record 
+        ft = trade_record$fee_tbl
+        
+        # add previous fees from record to latest fees and active positions
+        fee_tbl$yfee = ft$yfee + fee_tbl$yfee
+        
+        # update accordingly
+        trade_record <- list(
+          ptbl = update_ptbl,
+          new_price = swap$price2,
+          dy_in = tr$dy_in + swap$dy,
+          dy_fee = tr$dy_fee + swap$fee,
+          dx_out = tr$dx_out + swap$dx,
+          fee_tbl = fee_tbl
+        )
       }
-    
-    # else we're selling dx, price is going down 
-    # (P = Y/X, more X is less P)
-  } else { 
+      
+      # call the function again with new information including *adding* trade records
+      # until the final trade_record is output
+      swap_across_ticks(ptbl = trade_record$ptbl,
+                        sqrtpx96 = trade_record$new_price, 
+                        fee_tbl = trade_record$fee_tbl, 
+                        trade_record = trade_record,
+                        dx = NULL, 
+                        dy = leftover, 
+                        decimal_x = decimal_x, 
+                        decimal_y = decimal_y, 
+                        fee = fee)
+      
+      # else we're selling dx, price is going down 
+      # (P = Y/X, more X is less P)
+    }
+  } else if(is.null(dy)){ 
     amount <- dx
     price <- sqrtpx96_to_price(sqrtpX96 = sqrtpx96)
     recalc_price <- find_recalculation_price(positions = ptbl, 
-                                        current_price = price, 
-                                        price_up = FALSE)
+                                             current_price = price, 
+                                             price_up = FALSE)
     
-    }
-  
+  }
   
 }
 
