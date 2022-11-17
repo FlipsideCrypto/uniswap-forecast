@@ -825,8 +825,10 @@ pb = tick_to_price(max_tick)
 liquidity <- get_liquidity(x = x, y = y, P = P, pa = pa, pb = pb, yx = TRUE)
 
 reactable(
-  as.data.frame(
-lapply(liquidity, as.character) # can't data frame big integers natively. 
+  data.frame(
+  actual_liquidity = "343255264548669212",
+calculated_liquidity = as.character(liquidity), # can't data frame Big Ints
+ actual_div_calculated = as.numeric(as.bigq(liquidity)/as.bigq("343255264548669212"))
   )
 )
 ```
