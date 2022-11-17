@@ -1149,22 +1149,6 @@ The new balances of tokens include:
 - pa, min_tick = -50100 (pool has only a single position)
 - pb, max_tick = -39120 (pool has only a single position)
 
-```{r}
-reactable(
-  as.data.frame(
-    lapply(
-      get_liquidity(x = as.bigz(1.146808312350982128*1e18),
-                    y = as.bigz(0.00493069417466594*1e18),
-                    P = sqrtpx96_to_price('7609891887904192334730581214'),
-                    pa = tick_to_price(-50100),
-                    pb = tick_to_price(-39120),
-                    yx = TRUE), as.character
-    )
-  )
-)
-
-```
-
 It turns out that with only a single position in a liquidity pool; moving across ticks doesn't change the total liquidity! So that within a single position pool; prices can be moved across ticks as if it were all within a single tick spacing.
 
 In [this transaction](https://optimistic.etherscan.io/tx/0xec76dec1d664f4d0126513bd4ba59c3fe933086a914ac285c2b7dd038477e0de) the router used the proxy pool created for this analysis. The price moved from tick -46860 to tick -49472: 43 tick spacings! without liquidity changing.
