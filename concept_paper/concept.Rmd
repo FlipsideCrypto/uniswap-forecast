@@ -6,6 +6,7 @@ output:
   html_document:
     code_folding: hide
     toc: true
+    toc_float: true
 editor_options: 
   chunk_output_type: console
 ---
@@ -1635,6 +1636,7 @@ with perfect precision, let's confirm a real sale of 0.0005 MKR will match the e
 - Current Price: 
 
 ![Status of Pool prior to final validation of cross-position swap](proxy_pool_validation_6.png){width="50%"}
+
 Our estimated liquidity is within 0.009% of actual (this is due to differences in discrete math and lack of usage of Chinese Remainder Theorem in the R implementation causing precision loss).
 
 ```{r}
@@ -1692,7 +1694,7 @@ swap_across_ticks <- function(ptbl, sqrtpx96,
                               decimal_x = 1e18, 
                               decimal_y = 1e18, 
                               fee = 0.003){
-  browser()
+  
   if(is.null(dx) & is.null(dy)){
     stop("A change in x or y is required to use liquidity")
   }
@@ -2033,6 +2035,7 @@ Here is a screenshot of the Uniswap Labs website stating 0.0005 MKR should retur
 0.66862 LINK (as previously calculated in long form).
 
 ![Expected Output aligns so far!](proxy_pool_validation_7.png){width="50%"}
+
 Breaking down the results of `swap_across_ticks()`: 
 
 ```{r}
@@ -2046,7 +2049,7 @@ swp <- swap_across_ticks(ptbl = position_tbl_final,
 
 ```
 
-- The position table (`ptbl`)*after* the swap shows that position 1 is no longer active.
+- The position table (`ptbl`) *after* the swap shows that position 1 is no longer active.
 
 ```{r}
 reactable(
@@ -2101,3 +2104,30 @@ reactable(
   )
 )
 ```
+
+Adding up the fees confirms the positions spread the correct amount of fees.
+
+```{r}
+reactable(
+  data.frame(
+    mkr_fee = swp$dy_fee,
+    position_fees_earned = sum(swp$fee_tbl$yfee)
+  )
+)
+```
+
+# Conclusion 
+
+The inspiration of this (long) explanation of how Uniswap v2 and v3 function was 
+to develop an R package that could accurately simulate all relevant actions and results for participating in Uniswap. With all relevant functions created and tested and accurate 
+within tolerance (due to how the real contracts use fix point math) we can now retroactively 
+go to any block height; check all available liquidity positions and begin the next phase: 
+retroactive optimization.
+
+Given a starting block height, available liquidity at that height, and a sneak peek of 
+X swaps occurring in the next N blocks: what *marginal liquidity* position would maximize 
+the fee revenue over those N blocks. Similarly, what range of liquidity would maximize the 
+profit of the position: fee revenue minus divergent loss (the change in value of your assets when you sell one in exchange for the other).
+
+
+
