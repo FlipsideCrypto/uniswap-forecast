@@ -1692,7 +1692,7 @@ swap_across_ticks <- function(ptbl, sqrtpx96,
                               decimal_x = 1e18, 
                               decimal_y = 1e18, 
                               fee = 0.003){
-
+  browser()
   if(is.null(dx) & is.null(dy)){
     stop("A change in x or y is required to use liquidity")
   }
@@ -1750,7 +1750,7 @@ swap_across_ticks <- function(ptbl, sqrtpx96,
                               fee = fee)
       
       # attribute fees to positions 
-      fee_tbl$yfee <- fee_tbl$yfee + as.numeric(
+      new_fees <- as.numeric(
         swap$fee * fee_tbl$active * as.bigq(fee_tbl$liquidity) / 
           sum(as.bigq(fee_tbl$liquidity)[fee_tbl$active])
       )
@@ -1758,6 +1758,8 @@ swap_across_ticks <- function(ptbl, sqrtpx96,
       # If no previous trade record is provided make a new one and return it
       # this was a swap within a tick, not across them.
       if(is.null(trade_record)){
+        
+        fee_tbl$yfee = fee_tbl$yfee + new_fees
         
         trade_record <- list(
           ptbl = update_ptbl,
@@ -1774,7 +1776,7 @@ swap_across_ticks <- function(ptbl, sqrtpx96,
         ft = trade_record$fee_tbl
         
         # add previous fees from record to latest fees and active positions
-        fee_tbl$yfee = ft$yfee + fee_tbl$yfee
+        fee_tbl$yfee = ft$yfee + new_fees
         
         # update accordingly
         trade_record <- list(
@@ -1806,15 +1808,18 @@ swap_across_ticks <- function(ptbl, sqrtpx96,
                               fee = fee)
       
       # attribute fees to position
-      fee_tbl$yfee <- fee_tbl$yfee + as.numeric(
+        new_fees <- as.numeric(
         swap$fee * fee_tbl$active * as.bigq(fee_tbl$liquidity) / 
           sum(as.bigq(fee_tbl$liquidity)[fee_tbl$active])
       )
+      
       
       # UPDATE past trade record if it exists 
       # or make new one
       
       if(is.null(trade_record)){
+        
+        fee_tbl$yfee = fee_tbl$yfee + new_fees
         
         trade_record <- list(
           ptbl = update_ptbl,
@@ -1830,7 +1835,7 @@ swap_across_ticks <- function(ptbl, sqrtpx96,
         ft = trade_record$fee_tbl
         
         # add previous fees from record to latest fees and active positions
-        fee_tbl$yfee = ft$yfee + fee_tbl$yfee
+       fee_tbl$yfee = ft$yfee + new_fees
         
         # update accordingly
         trade_record <- list(
@@ -1905,7 +1910,7 @@ swap_across_ticks <- function(ptbl, sqrtpx96,
                               fee = fee)
       
       # attribute fees to positions 
-      fee_tbl$xfee <- fee_tbl$xfee + as.numeric(
+     new_fees <- as.numeric(
         swap$fee * fee_tbl$active * as.bigq(fee_tbl$liquidity) / 
           sum(as.bigq(fee_tbl$liquidity)[fee_tbl$active])
       )
@@ -1914,6 +1919,8 @@ swap_across_ticks <- function(ptbl, sqrtpx96,
       # this was a swap within a tick, not across them.
       if(is.null(trade_record)){
         
+       fee_tbl$xfee = fee_tbl$xfee + new_fees
+
         trade_record <- list(
           ptbl = update_ptbl,
           new_price = swap$price2,
@@ -1929,7 +1936,7 @@ swap_across_ticks <- function(ptbl, sqrtpx96,
         ft = trade_record$fee_tbl
         
         # add previous fees from record to latest fees and active positions
-        fee_tbl$xfee = ft$xfee + fee_tbl$xfee
+        fee_tbl$xfee = ft$xfee + new_fees
         
         # update accordingly
         trade_record <- list(
@@ -1961,7 +1968,7 @@ swap_across_ticks <- function(ptbl, sqrtpx96,
                               fee = fee)
       
       # attribute fees to position
-      fee_tbl$xfee <- fee_tbl$xfee + as.numeric(
+      new_fees <- as.numeric(
         swap$fee * fee_tbl$active * as.bigq(fee_tbl$liquidity) / 
           sum(as.bigq(fee_tbl$liquidity)[fee_tbl$active])
       )
@@ -1971,6 +1978,8 @@ swap_across_ticks <- function(ptbl, sqrtpx96,
       
       if(is.null(trade_record)){
         
+        fee_tbl$xfee = fee_tbl$xfee + new_fees
+
         trade_record <- list(
           ptbl = update_ptbl,
           new_price = swap$price2,
@@ -1985,7 +1994,7 @@ swap_across_ticks <- function(ptbl, sqrtpx96,
         ft = trade_record$fee_tbl
         
         # add previous fees from record to latest fees and active positions
-        fee_tbl$xfee = ft$xfee + fee_tbl$xfee
+        fee_tbl$xfee = ft$xfee + new_fees
         
         # update accordingly
         trade_record <- list(
