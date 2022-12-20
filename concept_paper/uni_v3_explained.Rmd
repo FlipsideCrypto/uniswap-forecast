@@ -1,34 +1,138 @@
 ---
-title: "Uniswap Conceptually"
-author: "Carlos Mercado"
+title: "Uniswap v3 Explained"
+author: "Charlie Marketplace"
 date: "`r Sys.Date()`"
 output:
   html_document:
     code_folding: hide
     toc: true
     toc_float: true
+    toc_depth: 2
 editor_options: 
   chunk_output_type: console
 ---
 
-# Intro
+```{css, echo=FALSE}
 
-Uniswap v2 is an automatic market maker that pools deposits of 2 tokens, here we will assume Ether (ETH) and wrapped Bitcoin (wBTC), and allows anyone to autonomously trade between the assets using that pool by paying a fee, e.g., 0.3%.
+@import url('https://fonts.googleapis.com/css?family=Inter');
+@import url('https://fonts.googleapis.com/css?family=Roboto+Mono');
 
-To do this, it takes both extreme relative prices:
+body {
+  background-color: #10151A;
+  background-position: center top;
+  background-size: 300px 117px;
+  padding-left: 10%;
+  padding-right: 10%;
+  padding-top: 118px;
+  color: #C4CDD5;
+  font-size: 18px;
+  font-weight: 400;
+  font-family: Inter;
+  margin-top: 10px;
+}
 
--   1 ETH = 0 BTC
--   1 ETH = Infinite BTC
+hr {
+  width: 85%;
+  color: #C4CDD5;
+}
 
-And uses a constant product function `x * y = k` to calculate how much of token x to provide to traders looking to offload token y. Note this is separate from the 0.3% fee. All trades, but especially large trades, *impact the relative price* of the tokens when trading, this is called price impact.
+.tocify {
+  background-color: #10151A;
+  font-size: 14px;  
+  color: #C4CDD5;
+  border: 0;
+}
 
-# Simulated WBTC-ETH Uniswap v2 Pool
+.list-group-item.active, .list-group-item.active:focus, .list-group-item.active:hover {
+    background-color: #DC4F9C;
+    border-color: #DC4F9C;
+}
 
-For example, assume the current price of 1 ETH is 0.1 WBTC and that a liquidity pool exists with 1,000 ETH and 100 WBTC. This means the constant product `k = 1000*100 = 100,000`
+.list-group-item {
+  background-color: #10151A;
+}
 
-Any trade is allowable as long as the resulting balance of X ETH and Y WBTC remains 100,000. Notice how US Dollar prices are not relevant. It is only the constant product enforcing relative prices that matters.
+h1 {
+  font-size: 1.4em;
+  padding-top: 10px;
+  color: #DC4F9C;
+}
+
+h2 {
+  font-size: 1.1em;
+  padding-top: 10px;
+  color: #6FCCDD;
+}
+
+h3 {
+  font-size: 1.1em;
+  padding-top: 10px;
+  color: white;
+}
+
+.plotly {
+  margin: 30px;
+}
+
+.rt-page-button-current  {
+  color: #FFF;
+}
+.rt-thead {
+  background-color: #10151A;
+  color: #FFFFFF;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.rt-th-content {
+  text-align: center;
+  vertical-align: middle;
+}
+
+.ReactTable {
+  background-color: #171e25;
+  color: #C4CDD5;
+  border: none;
+  font-family: Roboto Mono;
+  font-size: 0.8em;
+}
+
+.rt-th {
+  border: 0px solid #000000 !important;
+  padding-top: 15px;
+  padding-bottom: 15px;
+  font-weight: 400;
+  font-family: Inter;
+}
+.rt-tr {
+  padding-top: 5px;
+  padding-bottom: 5px;
+}
+.rt-pagination {
+  margin: 0;
+  background: #171e25;
+  opacity: 0.5;
+  border-bottom: 1px solid #C4CDD5;
+  border-top: 1px solid #C4CDD5;
+}
+
+.btn {
+  color: #FFF;
+  background: none;
+  border: none;
+  padding: 0;
+}
+
+#TOC {
+ margin: 71px 0px 20px 0px;
+}
+```
+
 
 ```{r, warning=FALSE, message=FALSE, fig.show='hide'}
+
+# Repeat from Uni v2 guide 
+
 options(scipen = 20)
 library(dplyr)
 library(plotly)
@@ -39,7 +143,6 @@ kfunc <- function(x, k = 100000){
  y = k/x
  return(y)
 }
-
 
 # draws plot and returns values 
 # This plots by default: suppressing this to only get data.
@@ -54,111 +157,11 @@ pool <- data.frame(
 
 # for simplicity focus in on 100 BTC range
 relevant_pool <- pool[50:180, ]
-
-plot_ly(relevant_pool, x = ~btc) %>% 
-  add_trace(y = ~eth, mode = 'lines', type = 'scatter', name = 'Constant Product') %>% 
-  add_trace(x = ~100, y = ~1000, type = 'scatter', mode = 'markers', name = 'Current Price') %>% 
-  layout(title = "Close up of Constant Product Curve around 100 BTC",
-         annotations = list(x = 105, y = 1100,
-                            text = 'Current Price',
-                            showarrow = FALSE))
-  
 ```
 
-The orange point denotes the current (relative) price 1 ETH = 0.1 BTC, or more specifically 100 BTC = 1,000 ETH. But to *trade* with the pool *causes* a change in the price.
+# Simulated WBTC-ETH v3
 
-Reviewing the table form of the 95 - 105 BTC range where k = 100,000 shows the price point of several potential trades.
-
-```{r,  warning=FALSE, message=FALSE}
-price_snippet <- pool[96:106, ]
-price_snippet$btc_delta <- price_snippet$btc - 100
-price_snippet$eth_delta <- price_snippet$eth - 1000
-price_snippet <- price_snippet %>% round(4) # 4 decimals
-
-reactable(price_snippet %>% round(3), defaultPageSize = 25)
-```
-
-If you have 1 BTC and want ETH you would change the pool balance from:
-
--   100 BTC and 1000 ETH
-
-to
-
--   101 BTC and 990.099 ETH
-
-Meaning that although the price *was* 0.1 BTC per ETH originally. You actually only get `r 1000 - 990.099` ETH for your 1 BTC (would be less after any fee, e.g., 0.3%). This is the *price impact* mentioned previously. Instead of 0.1 BTC per ETH, you pay 0.10099 BTC per ETH. a **0.99%** price impact.
-
-In the other direction if you want 5 BTC you would need to provide 52.6316 ETH to change the pool's composition to 95 BTC (and 1,052.6316 ETH). Instead of 0.1 BTC per ETH, you only get 0.09499 BTC per ETH. A **5.01%** price impact.
-
-The larger the trade (5 BTC instead of 1 BTC) the worse the price impact.
-
-The solution to this is to widen the curve by deepening the liquidity available. If instead the pool was 10,000 BTC and 100,000 ETH, trades of 1 BTC or even 5 BTC would be much closer to 0.1 BTC per ETH (it would not be exact because price impact still occurs).
-
-# Real World WBTC-ETH Uniswap v2 Pool
-
-Looking at the [Uniswap v2 ETH/WBTC pool](https://v2.info.uniswap.org/pair/0xbb2b8038a1640196fbe3e38816f3e67cba72d940%3E) analytics page.
-
-![Example Screenshot from 2022-09-18](v2_wbtc_eth_screenshot.png){width="300"}
-
-245.7565 WBTC and 3,532 ETH are in this pool. This is a relative price of 0.06957 BTC per ETH. Bitcoin is doing better against ETH than in the fake example above.
-
-The constant product `k = 245.7565 * 3532 = 868,012`. This makes the real pool significantly more *deep* than in the fake intro example. So price impacts should be much smaller!
-
-The constant product curve for the real pool is here:
-
-```{r, fig.show='hide'}
-
-x_real <- curve(kfunc(x, k = 868012), 200, 300, n = 100000, xlab = 'BTC', ylab = 'ETH', add = FALSE)
-
-```
-
-```{r,  warning=FALSE, message=FALSE}
-pool_real <- data.frame(
-  btc = x_real$x,
-  eth = x_real$y
-)
-
-plot_ly(pool_real, x = ~btc) %>% 
-  add_trace(y = ~eth, mode = 'lines', type = 'scatter', name = 'Constant Product') %>% 
-  add_trace(x = ~245.7565, y = ~3532, type = 'scatter', mode = 'markers', name = 'Current Price') %>% 
-  layout(title = "Close up of Constant Product Curve around 245 BTC",
-         annotations = list(x = 255, y = 3590,
-                            text = 'Current Price',
-                            showarrow = FALSE))
-```
-
-Unlike before, because this pool is deeper a move of 1 BTC is much more easily absorbed.
-
-```{r,  warning=FALSE, message=FALSE}
-one_increments <- pool_real[seq(from = 40757, 50757, by = 1000), ]
-
-one_increments$btc_delta <- one_increments$btc - 245.7565
-one_increments$eth_delta <- one_increments$eth - 3532
-one_increments <- one_increments %>% round(2) # 3 decimals
-reactable(one_increments)
-```
-
-Selling 1 BTC to force the pool from 245.7565 to 246.7565 would remove 14.3131 ETH form the pool. This `r 1/14.3131` BTC per ETH is very close to the original relative price of 0.06957 BTC per ETH, only a **0.42%** price impact.
-
-In the other direction if you want 5 BTC you would need to provide 73.3537 ETH. This `r 5/73.3537` BTC per ETH a **2.02%** price impact.
-
-## Real World Uniswap v2 Confirmation
-
-The 245.7565 WBTC; 3,532 ETH V2 Pool was as of Block 15,562,988. [This transaction](https://etherscan.io/tx/0x1f23e1feb1def28e5b5c7c4800dc66ff8338e114657593d08d9c6891471806d5) shows a trade of 1.3159 ETH for 0.0913 BTC in that block.
-
-The constant product math with `k = 868,012` including the 0.3% fee would expect the following result:
-
-`( 3532 - (1.3159*0.997) ) * (245.7565 + x) = 868,012`
-
-Where the expected 0.0913 matches the transaction.
-
-x = `round(868012/(3532 - 1.3159*0.997) - 245.7565, 4)`
-
-x = `r round(868012/(3532 - 1.3159*0.997) - 245.7565, 4)`
-
-Rounding, in addition to the possibility of *other trades* happening in the same block before this transaction (blocks are comprised on transactions and transactions within a block go in order) affecting the pool could lead to small differences in the expected and actual results. But our calculation and the real world matched to 4 significant digits.
-
-# Simulated WBTC-ETH Uniswap v3 Pool
+Before continuing it may help to review [Uni v2 Explained](https://science.flipsidecrypto.xyz/uni_v2_explained).
 
 Uniswap v3 introduces *concentrated liquidity*. Instead of 1 pool covering all the extreme price ranges:
 
@@ -172,11 +175,14 @@ Users individually provide target ranges, e.g.,
 
 It can be tricky to think about these as minimums and maximums. It may help to recall that Automated Market Makers sell winners to buy losers and charge a fee for doing so. So as ETH rises in value (1 ETH buys more BTC) the liquidity pool, given a constant product, becomes disproportionately full of BTC instead of ETH.
 
-In the extreme case, if the 100 BTC 1,000 ETH Liquidity Pool with 1 ETH = 0.1 BTC price mentioned above shifted to 1 ETH = 10 BTC, the pool would have to flip to 1,000 BTC and 100 ETH. The BTC comes from sellers of BTC who buy ETH: forcing the pool's balance to change (because of constant product).
+In the extreme case for a Uniswap v2 pool, if the 100 BTC 1,000 ETH Liquidity Pool with 1 ETH = 0.1 BTC price shifted to a new price 1 ETH = 10 BTC, the pool would flip to having 1,000 BTC and 100 ETH. The BTC comes from sellers of BTC who buy ETH: forcing the pool's balance to change (because of constant product).
 
-Recall the Simulated 100 BTC; 1000 ETH liquidity pool from before but this time with two prices on the range noted: 1 ETH = 0.05 BTC and 1 ETH = 0.25 BTC.
+Using a simulated 100 BTC & 1000 ETH liquidity pool detailed in the Uni v2 guide, but this time with two prices on the range noted: 1 ETH = 0.05 BTC and 1 ETH = 0.25 BTC.
 
 ```{r, warning=FALSE, message=FALSE}
+library(dplyr)
+library(plotly)
+library(reactable)
 
 p_func <- function(k = 100000, p = 0.05){
   # x * y = k
@@ -218,6 +224,8 @@ In Uniswap v3, liquidity providers choose their range (e.g., Min 1 ETH = 0.05 BT
 
 ## Understanding Uni v3 Ticks
 
+Every liquidity provider spreads their liquidity across a range of *ticks*. 
+
 Ticks act like 'buckets' of liquidity pooled from multiple providers. As trades occur, price impact happens using the same x*y = k formula within a tick. Ticks become exhausted of liquidity as price impact moves pushes the relative prices into other buckets of liquidity (i.e., across ticks).
 
 This range is spread across ticks where each (integer) tick `i` is tracked with the formula:
@@ -228,13 +236,23 @@ Ticks are *not* the same size. They are 0.01% apart from their neighboring ticks
 
 Although we target a price range of 0.05 and 0.25, in actuality, the exact ticks need to fit within the tick spacing of the pool (which varies by fee tier).
 
-For the ETH-WBTC 0.3% Fee Tier we would choose whichever range is as close as possible to our desired range while still being an integer of ticks and meeting the required tick spacing (60 for this pool on Ethereum). In addition to this tick spacing, for any pool, differences in the allowable decimals of the tokens will require a decimal adjustment.
+For the ETH-WBTC 0.3% Fee Tier we would choose whichever range is as close as possible to our desired range (0.05 and 0.25 might not perfectly line up to the pool's tick spacing rules).
+
+The tick spacing  for this pool on Ethereum is 60. 
+
+### A note on decimal adjustment
+
+In addition to this tick spacing, for any pool, differences in the allowable decimals of the tokens will require a decimal adjustment.
 
 Most ERC20 that are not stablecoins use 18 decimals and won't require an adjustment with ETH. But wrapped Bitcoin, WBTC, has 8 decimals to mimic Bitcoin; while ETH has 18. Thus, a 1e10 (18-8 = 10) decimal adjustment is needed.
 
 For a USDC-WETH pool; USDC has 6 decimals. Thus, a 1e12 (18 - 6 = 12) decimal adjustment is needed.
 
+## Setting our tick spacing 
+
 Tick spacing matters significantly and changes by price tier. The USDC-WETH 0.3% pool has a 60 tick spacing just like the WBTC-ETH 0.3% pool; while the USDC-WETH 0.05% pool has a 10 tick spacing. For every analysis, getting the correct pool specific decimal adjustments and tick spacing are critical.
+
+Here our desired 0.05 to 0.25 BTC/ETH price ranges are translated to ticks -260220 and -244140.
 
 ```{r,  warning=FALSE, message=FALSE}
 
@@ -278,10 +296,6 @@ if(initial_tick %% tick_spacing == 0){
   r$actual_price <- sqrt(1.0001)^(2*final_tick) * decimal_adjustment
 }
 
-if(yx == TRUE){
-  r$note <- "v3 assumes X/Y format, your tick may need to be made negative, or price inversed."
-}
-
 return(r)
     
 }
@@ -297,7 +311,17 @@ reactable(
 
 ```
 
-Spreading liquidity evenly across ticks results in a uniform distribution of liquidity across ticks. But the *amount* of tokens to reach a desired liquidity (to then spread) across a concentrated range depends **on the current price**.
+### A note on price 
+
+Uniswap v3 pools have 2 tokens labeled in the contract as 'Token 0' (x) and 'Token 1' (y). It tracks the price 
+of a pool as Token 1 / Token 0. In many instances it can be easier to think of price in Token 0 / Token 1 terms.
+This inversion is a convenience for interpretation that all functions used here are built to accept either way.
+
+It is important to be able to fluidly understand this inversion because it impacts numerous subtleties in how to think about Uniswap v3. For example, our ticks above were negative because 1 ETH is < 1 BTC. This won't always be true, some pools you should expect to see almost exclusively positive ticks.
+
+## Spreading Liquidity 
+
+Spreading liquidity evenly across ticks results in a uniform distribution of liquidity. But the *amount* of tokens to reach a desired liquidity (to then spread) across a concentrated range depends **on the current price**.
 
 To get a simple result, let's assume we have 12.549 ETH and we need to know how much BTC to match it for our desired 0.05 BTC/ETH - 0.25 BTC/ETH range.
 
@@ -385,16 +409,29 @@ reactable(
 
 ```
 
-This range needs 1 BTC to match with 12.549 ETH (this number was chosen on purpose).
-
-Note: This math for matching x to y; or y to x changes based on your unit of account, i.e., if your prices
-are in Y/X (ETH/BTC) or X/Y (BTC/ETH) format. The functions detailed here can handle any direction of pricing as 
-long as the parameters Current Price (P), min price (pa), max price (pb), and price ratio (yx) are match accordingly.
-
 
 Given the 0.1 BTC/ETH price, the desired 0.05 - 0.25 range would require ~12.549 ETH per BTC deposited (it scales linearly w/ more BTC given same price and range).
 
+You can get the same result using y/x pricing if desired: 
+
+-   x = ?? BTC
+-   y = 12.549 ETH
+-   Current Price: y/x = 10 ETH/BTC
+-   min price (for BTC), pa = 4 ETH/BTC (BTC is LOW, you only get 4 ETH for 1 BTC, our position is  100% BTC at or below this price)
+-   max price (for BTC), pb = 20 ETH/BTC (ETH is HIGH, you get 20 ETH for just 1 BTC, our position is 100% ETH at or above this price)
+
+```{r}
+
+reactable(
+  as.data.frame(
+    match_tokens_to_range(x = NULL, y = 12.549, P = 10, pa = 4, pb = 20, yx = TRUE)
+  )
+)
+
+```
+
 Your choice of *unit of account* (i.e., choice of price = y/x or x/y) determines how we define minimum and maximum for a range. Whichever way you choose to account for and calculate these ranges, it helps to pick one and stay consistent. In line with the original White Paper, BTC/ETH (i.e., x/y) has been the preferred method unit of account ratio in this paper. Formulas from other papers using Y/X will have the inversions abstracted away via functions similar to `match_tokens_to_range()` above.
+
 
 ## Capital Efficiency & Range Selection
 
@@ -410,7 +447,6 @@ reactable(
     match_tokens_to_range(y = 1000, P = 0.1, pa = 0.05, pb = 0.25, yx = FALSE)
   )
 )
-
 ```
 
 The increase in efficiency is most obvious when making the range flexible to ensure the exact amount of tokens available is used.
@@ -426,7 +462,6 @@ Forcefully using all available tokens given a current price and max price with a
 We can use the `price_all_tokens()` with min price `pa = NULL` and noting our 
 price is **not** in y/x (ETH/BTC) format; it is in x/y (BTC/ETH) format. Click the code button 
 to expand this example. 
-
 
 ```{r}
 
@@ -503,13 +538,65 @@ Recall earlier, that the 0.05 - 0.25 range only required 79 BTC and 1000 ETH at 
 
 This 0.04 - 0.25 range uses all 100 BTC (and 1000 ETH) we have available, but it spreads liquidity wider and may be less capital efficient and result in less revenue per tick. We can't know a priori which range will be more profitable overall as that will depend on how much liquidity others are providing across which ticks and the changing prices of BTC/ETH.
 
+
 But, nonetheless, the same liquidity `100 BTC * 1000 ETH = k = 100,000` is more efficient in the 0.04 - 0.25 range than it would be in the Uniswap v2 0 - Inf range given a set of N swaps that all occur in the 0.04 - 0.25 range paying 0.3% fees.
 
 Note: The implied proportionality (1/0.04 = .25 * 100 BTC) of the clean min and max prices are because the amounts and current price are all proportional.
 
 Given real world examples, you can get very odd looking min and max prices when forcing ranges to fit an amount of tokens.
 
-## Real World Range Selection Confirmation
+## Setting Range to use All Tokens
+
+To put all 100 WBTC and 1000 ETH into the pool, with a max price of 0.25 WBTC/ETH range with a current price of 0.1 BTC/ETH
+
+`price_all_tokens(x = 100, y = 1000, P = 0.1, pa = NULL, pb = 0.25, yx = FALSE)`
+
+Requires a minimum price of 0.04.
+
+```{r}
+reactable(
+  as.data.frame(
+    price_all_tokens(x = 100, y = 1000, P = 0.1, pa = NULL, pb = 0.25, yx = FALSE)
+  )
+)
+```
+
+This range of 0.04 - 0.25 WBTC/ETH converted into actual ticks, with a decimal adjustment of 1e10 
+(WBTC has 8 decimals, ETH has 18: 18 - 8 = 10) and 0.3% fee tier tick spacing of 
+60 converts to tick -262440 and tick -244140.
+
+```{r}
+min_tick <- get_closest_tick(0.04, tick_spacing = 60, decimal_adjustment = 1e10, yx = FALSE)
+max_tick <- get_closest_tick(0.25, tick_spacing = 60, decimal_adjustment = 1e10, yx = FALSE)
+
+reactable(
+  rbind.data.frame(
+    min_tick, max_tick
+  )
+)
+
+```
+
+Again, for Y/X (ETH/BTC) prices, you can simply invert these numbers and understand that by inverting, you've switched min and max because you switched unit of accounts.
+
+For the WBTC-ETH 0.3% fee pool on Ethereum mainnet specifically, this is how Uni v3 NFT positions 
+would label the described position (ETH/BTC):
+
+```{r}
+min_tick <- get_closest_tick(0.25^-1, tick_spacing = 60, decimal_adjustment = 1e10^-1, yx = TRUE)
+max_tick <- get_closest_tick(0.04^-1, tick_spacing = 60, decimal_adjustment = 1e10^-1, yx = TRUE)
+
+reactable(
+  rbind.data.frame(
+    min_tick, max_tick
+  )
+)
+```
+
+Note the symmetry is coincidental, as 0.25^-1 is 4, and 0.04^-1 is 25. Real world pools 
+are much messier but the fundamentals covered so far will help!
+
+# Real World Uni v3
 
 To both confirm the provided math and provide a real world reference example to range selection.
 
@@ -547,39 +634,7 @@ Want to know what range you need to use all the tokens you have available?
 Note: if you switch your ratio to Y/X (i.e., ETH per BTC) in the User Interface. These functions all 
 still apply, just use `yx = TRUE` and note the new `Price`, `Min Price` and `Max Price` accordingly.
 
-# Price and Liquidity Tracking 
-
-To pull all 100 WBTC and 1000 ETH into the pool, with a max price of 0.25 WBTC/ETH range with a current price of 0.1 BTC/ETH
-
-`price_all_tokens(x = 100, y = 1000, P = 0.1, pa = NULL, pb = 0.25, yx = FALSE)`
-
-Requires a minimum price of 0.04.
-
-```{r}
-reactable(
-  as.data.frame(
-    price_all_tokens(x = 100, y = 1000, P = 0.1, pa = NULL, pb = 0.25, yx = FALSE)
-  )
-)
-```
-
-This range of 0.04 - 0.25 WBTC/ETH converted into actual ticks, with a decimal adjustment of 1e10 
-(WBTC has 8 decimals, ETH has 18: 18 - 8 = 10) and 0.3% fee tier tick spacing of 
-60 converts to tick -55200 and tick -36900.
-
-```{r}
-min_tick <- get_closest_tick(0.04, tick_spacing = 60, decimal_adjustment = 1e10, yx = FALSE)
-max_tick <- get_closest_tick(0.25, tick_spacing = 60, decimal_adjustment = 1e10,  yx = FALSE)
-
-reactable(
-  rbind.data.frame(
-    min_tick, max_tick
-  )
-)
-
-```
-
-# Real World Price & Liquidity Tacking
+## Price & Liquidity Tracking
 
 To validate the math, I created a brand new Uniswap v3 Pool on Optimism: [MKR/LINK](https://optimistic.etherscan.io/address/0x353ec75f40edb3b794e10bc049532e60d89d5d19) 0.3% Fee Tier.
 
@@ -609,7 +664,9 @@ The sqrtPriceX96 is the price in unsigned integer 160 bit form. The first 64 bit
 96 are the fractional part. `price_to_sqrtpx96()` and `sqrtpx96_to_price()` are available for smoothly
 converting between these forms. 
 
-As noted previously, different math sources and different pools freely switch between pricing in X/Y and Y/X form.
+
+As noted previously, different math sources and different pools freely switch between pricing in X/Y and Y/X form (i.e., which token is Token 0 and which is Token 1 are chosen by the pool creator at time of creation!).
+
 When you convert a sqrtpX96 to a standard price, be aware of what pool you are using and be prepared to 
 invert prices (e.g., mutiplying ticks by -1) to ensure things are making sense at the *pool* level.
 
@@ -619,6 +676,7 @@ are configured based on the pool creator's input.
 
 This is troublesome, but functions have been prepared to accept `yx = TRUE` or `yx = FALSE` parameters
 to handle them according to what the user thinks is more logical for understanding the pool.
+
 
 ```{r, warn = FALSE, message = FALSE}
 library(gmp) # large numbers library 
@@ -655,17 +713,24 @@ reactable(
 These prices coincide with Y/X pricing, where token 0 (X) is LINK, and token 1 (Y) is MKR. Thus,
 these are MKR / LINK prices.
 
-As you work with Uni v3, you will notice that precision is regularly lost. Generally,
-these functions will be within 0.005% of each other if not even closer. 
+As you work with Uni v3, you will notice some precision loss between what the contract says and 
+what R, Python, JavaScript or other implementation of big math says. In general, everything written here in R will be within 0.005% of Uniswap's output if not even closer.
 
-### Note on Decimal Adjustment
+The reason for this is because smart contracts use fixed point math. The Uniswap v3 code 
+even implements "Chinese Remainder Theorem" to handle division in very large numbers. 
+The implementation built here in R uses the `gmp` package to handle large integers, at the 
+cost of small misalignments when cutting to 18 decimals (the standard amount for ERC20).
+
+
+### Another note on decimal adjustment
 
 Note: This was easy to do given that MKR and LINK both have the same amount of decimals.
 When pools don't have the same amount of decimals (e.g., a USDC/ETH pool) decimal adjustments (and 
-careful understanding of whether pricing is X/Y or Y/X) are important to confirm a logical result. 
+careful understanding of which token is Token 0 and which is Token 1) are important to confirm a logical result. 
 
 For illustrative purposes consider the USDC (6 decimal) / WETH (18 decimal) pool. 
 At time of snapshot, ETH was ~$1351.
+
 
 ![USDC-WETH from Read Contract on Etherscan](usdc_weth_pool_price_1.png){height="50%" width="50%"}
 
@@ -734,7 +799,7 @@ vectors on manipulating liquidity and the geometric oracle built into Uni v3.
 
 get_liquidity <- function(x, y, P, pa, pb, yx = TRUE){ 
   
-  # if prices are in Y/X format, invert them and act as X/Y
+  # if prices are not in Y/X format, swap min and max; invert them and act as Y/X
   if(yx == FALSE){
     return(get_liquidity(x, y, P = P^-1, pa = pb^-1, pb = pa^-1, yx = TRUE))
   }
@@ -838,7 +903,7 @@ But they are within 0.000005% of each other.
 
 ## Swap within a Tick
 
-The liquidity `r liquidity` is the amount of active liquidity among all relevant positions- here, just one.
+The liquidity `r liquidity` is the amount of active liquidity among all relevant positions: here, just one.
 
 The current price tick from the contract is -46818.
 That means the current range is starts at the nearest tick spacing before -46818: 
@@ -981,48 +1046,26 @@ reactable(
 
 This perfectly aligns to the real world transaction on Optimism [here](https://optimistic.etherscan.io/tx/0x48bbeb4fd7e6f04950e24929314a4730a62528e6da1d61d378ad9599bf442fd6).
 
-![Confirmation of swap on real world pool.](real_swap_op_1.png){height="50%" width="50%"}
-
-Showing the swap in reverse, adding the MKR (adjusted for fee) instead of removing it (i.e., selling MKR to the pool), shows a MKR fee of `0.000000000000852578793443278` and the pool returns `-0.00000003058346 LINK`. 
-The liquidity is the same, but the final price moves in the other direction (selling MKR to the pool 
-increases the amount of MKR in the pool, reducing the amount of LINK in the pool, and increases the amount of MKR per LINK; i.e., the price.)
-
-```{r}
-swap_yx <- swap_within_tick(L = liquidity,
-                 sqrtpx96 = price_to_sqrtpx96(P), 
-                 dx = NULL, 
-                 dy = 0.000000000283340352354316/0.997)
-
-reactable(
-  data.frame(
-    'liquidity' = as.character(swap_yx$liquidity), 
-    'dy' = as.character(swap_yx$dy),
-    'dy_fee' = as.character(swap_yx$fee),
-    'dy_plus_fee' = as.character(swap_yx$dy + swap_yx$fee),
-    'dx' = as.character(swap_yx$dx),
-    'initial_price' = as.character(swap_yx$price1),
-    'final_price' = as.character(swap_yx$price2)
-  )
-)
-```
-
-Notice the price change from `762588864...` to `762588871...` By giving the pool MKR and removing LINK from the pool (i.e., selling MKR), the price in MKR/LINK increases: 1 LINK gets more MKR.
+The pool gives up `0.000000000283340352` MKR which matches the calculated value:
+`dy = -0.000000000283340352| 354316` where `|` marks the 18 decimals.
+               
+![Confirmation of swap on real world pool.](real_swap_op_1.png){height="75%" width="75%"}
 
 ## Swap across Ticks
 
 Swaps across ticks work by using the liquidity available between the current price and 
-the next tick range (i.e., the next tick given tick spacing); then re-calculating liquidity at this tick, and continuing to the next range; repeating this process until the swap is complete.
+the next tick range (i.e., the next tick given the pool's tick spacing); then re-calculating liquidity at this tick, and continuing to the next range; repeating this process until the swap is complete.
 
 Recall that liquidity (L) and price (the square root Px96) *only change one at a time*. 
 Within a tick range, the price changes and liquidity is fixed. When crossing a tick, the price pauses while liquidity is recalculated.
 
 Said again: 
 
-1. Given Liquidity, L; current price, P; and a desired swap, dx or dy (token 0 or token 1).
-2. Calculate the swap size, DX_tick that moves the price to the next tickspacing
-3a. If the desired swap size dx <= DX_tick, complete the swap and move the price to P1, leaving liquidity the same, and the swap is complete.
-3b. If the desired swap size dx > DX_tick, complete part of swap (dx_leftover = dx - DX_tick) and at the new tick spacing, re-calculate Liquidity, L_new using the new price P_new at that tick spacing.
-4. Given L_new, P_new, and dx_leftover, repeat steps 1-3 until 3a is reached.
+    1. Given Liquidity, L; current price, P; and a desired swap, dx or dy (token 0 or token 1).
+    2. Calculate the swap size, DX_tick that moves the price to the next tickspacing
+      3a. If the desired swap size dx <= DX_tick, complete the swap and move the price to P1, leaving liquidity the same, and the swap is complete.
+      3b. If the desired swap size dx > DX_tick, complete part of swap (dx_leftover = dx - DX_tick) and at the new tick spacing, re-calculate Liquidity, L_new using the new price P_new at that tick spacing.
+    4. Given L_new, P_new, and dx_leftover, repeat steps 1-3 until 3a is reached.
 
 The `size_price_change_in_tick()` function is used for step (2); given Liquidity and two prices (current and target) it returns the swap size needed to change the price in desired form (dx, amount of x needed or dy, amount of y needed). NOTE: This is only accurate up to the next tick spacing! This function will be used 
 iteratively with `get_liquidity()` to methodically complete swaps.
@@ -1093,19 +1136,7 @@ The ticks surrounding this price given 60 tick spacing are:
 get_closest_tick(sqrtpx96_to_price("7625888585730332125670982418"))$tick + c(-60, 0)
 ```
 
-Let's identify how to move the price from the current price to the -46800 tick.
-
-```{r}
-
-size_price_change_in_tick(L = "343255263830421644",
-                  sqrtpx96 = "7625888585730332125670982418",
-                  sqrtpx96_target = price_to_sqrtpx96(tick_to_price(-46800)), 
-                  dx = TRUE)
-
-```
-
-To move the price to -46800, requires *removing* (notice the negative) (-)0.003217664 LINK (x, token 0), i.e.,
-adding MKR. To keep it simple, let's assume we want to sell LINK for MKR and move price to -46860.
+Let's sell LINK for MKR and move price to -46860.
 
 ```{r}
 size_price_change_in_tick(L = "343255263830421644",
@@ -1187,11 +1218,13 @@ tick2 = -49472
 delta_link = size_price_change_in_tick(L = l2,
                           sqrtpx96 = p1,
                           sqrtpx96_target = p2, 
-                          dx = TRUE)
+                          dx = TRUE, 
+                          fee = 0.003)
 delta_mkr = size_price_change_in_tick(L = l2,
                           sqrtpx96 = p1,
                           sqrtpx96_target = p2, 
-                          dx = FALSE)
+                          dx = FALSE, 
+                          fee = 0) # fee paid in LINK, so ignore fee here.
 
 reactable(
   data.frame(
@@ -1250,7 +1283,10 @@ position_tbl
 ```
 
 Notice that the current balance of our original position 0.0008946 MKR matches correctly 
-to 1.645136 LINK that is in the contract prior to adding new positions.
+to 1.645136 LINK that is in the contract prior to adding new positions because it *must* 
+match for the price to be what it is! Thus, knowing the current price can tell you the breakdown
+of assets within a position when you know the range.
+
 
 ### Calculating Liquidity 
 
@@ -1258,7 +1294,6 @@ The liquidity of the pool is now: `363887625690661420`. This is the sum all of t
 *active* positions.
 
 ![3-Position Liquidity & Price from Etherscan](proxy_pool_price_liq_4_multiposition.png){height="50%" width="50%"}
-
 
 ```{r}
 
@@ -1282,7 +1317,7 @@ reactable(
 
 ```
 
-The sum of this liquidity is `r sum(as.bigz(position_tbl$liquidity))` which, due to some
+The sum of this liquidity is `r sum(as.bigz(position_tbl$liquidity))` which, due to known
 precision loss, is 0.009% off the formal contract, within tolerance.
 
 ## Swaps within all active positions
@@ -1316,7 +1351,9 @@ find_recalculation_price <- function(positions, current_price, price_up = TRUE){
   return(closest_price)
 }
 
-recalculation_price <- find_recalculation_price(position_tbl, position_tbl$price[1], price_up = TRUE)
+recalculation_price <- find_recalculation_price(position_tbl,
+                                                current_price = 0.007105192, 
+                                                price_up = TRUE)
 
 ```
 
@@ -1350,7 +1387,7 @@ reactable(
 ```
 
 We can *add* up to 0.0007... MKR to the pool before recalculating liquidity; alternatively we 
-can *remove* (note the minus sign) a maximum of 0.09669... LINK before recalculating liquidity (both actions increase the MKR/LINK price to our specified target!)
+can *remove* (note the minus sign) a maximum of 0.09669... LINK before recalculating liquidity (either action increases the MKR/LINK price to our specified target!)
 
 Since 0.0005 is smaller than 0.000700637157102397 we can sell 0.0005 MKR to this pool without changing the available liquidity
 
@@ -1402,7 +1439,7 @@ Compare this to the actual amounts collected for each position:
 
 - Position 0 [confirmation link](https://optimistic.etherscan.io/tx/0x76e0002ac5f7480c612b5e07bff546567814eb286244ae3f427621d437128fbd)
 
-- Position 1[confirmation](https://optimistic.etherscan.io/tx/0xa63d01a0f9b2959a857a661c296606bee6b4cc8860ccaaab16136fd29c8f26b1)
+- Position 1 [confirmation](https://optimistic.etherscan.io/tx/0xa63d01a0f9b2959a857a661c296606bee6b4cc8860ccaaab16136fd29c8f26b1)
 
 - Position 2 [confirmation](https://optimistic.etherscan.io/tx/0x308cf68161bd67f3d2f1032d6b5b222f1fb15e73e082103cc4a5a3c76343d8e9)
 
@@ -1419,6 +1456,8 @@ reactable(
 
 ```
 
+The deviations here are within tolerance.
+
 ## Swaps across active positions 
 
 We now have all the components required to identify swap prices and fees paid across
@@ -1427,12 +1466,12 @@ where liquidity must *change* mid-swap.
 
 With the available components this is now easy: 
 
-1. Given a set of liquidity and a desired swap amount (and direction), calculate the the 
+    1. Given a set of liquidity and a desired swap amount (and direction), calculate the the 
 recalculation_price: the price at which liquidity must be recalculated.
-2. If the swap would exceed that recalculation price, swap *up to* that price
+    2. If the swap would exceed that recalculation price, swap *up to* that price
 and distribute the fees (so far) across available liquidity. Otherwise proceed as if in 1 large tick.
-3. Pause with the excess swap amount, and re-calculate liquidity given new active positions.
-4. Repeat 1-3 given new liquidity(s).
+    3. Pause with the excess swap amount, and re-calculate liquidity given new active positions.
+    4. Repeat 1-3 given new liquidity(s).
 
 Recall the current positions and their ranges, with the updated current price: 
 
@@ -1503,8 +1542,7 @@ reactable(
 
 ```
 
-4. Perform a swap of the defined size. Distribute fees across the active positions. Update the price to the recalc 
-price.
+4. Perform a swap of the defined size. Distribute fees across the active positions. Update the price to the recalc price.
 
 ```{r}
 leftover_mkr <- 0.0005 - recalc_amt_mkr 
@@ -2018,6 +2056,7 @@ liquidity match up to the real uniswap contract.
 
 Here is a screenshot of the Uniswap Labs website stating 0.0005 MKR should return 
 0.66862 LINK (as previously calculated in long form).
+
 
 ![Expected Output aligns so far!](proxy_pool_validation_7.png){width="50%"}
 
