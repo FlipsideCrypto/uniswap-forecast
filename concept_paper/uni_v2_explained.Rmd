@@ -1,131 +1,19 @@
 ---
 title: "Uniswap v2 Explained"
-author: "Charlie Marketplace"
+author: "Charlie Marketplace // Data Science @FlipsideCrypto"
 date: "`r Sys.Date()`"
 output:
   html_document:
+    css: "styles.css"
+    includes:
+      in_header: header.html
+      after_body: footer.html
     code_folding: hide
     toc: true
     toc_float: true
 editor_options: 
   chunk_output_type: console
 ---
-
-```{css, echo=FALSE}
-
-@import url('https://fonts.googleapis.com/css?family=Inter');
-@import url('https://fonts.googleapis.com/css?family=Roboto+Mono');
-
-body {
-  background-color: #10151A;
-  background-position: center top;
-  background-size: 300px 117px;
-  padding-left: 10%;
-  padding-right: 10%;
-  padding-top: 118px;
-  color: #C4CDD5;
-  font-size: 18px;
-  font-weight: 400;
-  font-family: Inter;
-  margin-top: 10px;
-}
-
-hr {
-  width: 85%;
-  color: #C4CDD5;
-}
-
-.tocify {
-  background-color: #10151A;
-  font-size: 14px;  
-  color: #C4CDD5;
-  border: 0;
-}
-
-.list-group-item.active, .list-group-item.active:focus, .list-group-item.active:hover {
-    background-color: #DC4F9C;
-    border-color: #DC4F9C;
-}
-
-.list-group-item {
-  background-color: #10151A;
-}
-
-h1 {
-  font-size: 1.4em;
-  padding-top: 10px;
-  color: #DC4F9C;
-}
-
-h2 {
-  font-size: 1.1em;
-  padding-top: 10px;
-  color: #6FCCDD;
-}
-
-h3 {
-  font-size: 1.1em;
-  padding-top: 10px;
-  color: white;
-}
-
-.plotly {
-  margin: 30px;
-}
-
-.rt-page-button-current  {
-  color: #FFF;
-}
-.rt-thead {
-  background-color: #10151A;
-  color: #FFFFFF;
-  text-align: center;
-  vertical-align: middle;
-}
-
-.rt-th-content {
-  text-align: center;
-  vertical-align: middle;
-}
-
-.ReactTable {
-  background-color: #171e25;
-  color: #C4CDD5;
-  border: none;
-  font-family: Roboto Mono;
-  font-size: 0.8em;
-}
-
-.rt-th {
-  border: 0px solid #000000 !important;
-  padding-top: 15px;
-  padding-bottom: 15px;
-  font-weight: 400;
-  font-family: Inter;
-}
-.rt-tr {
-  padding-top: 5px;
-  padding-bottom: 5px;
-}
-.rt-pagination {
-  margin: 0;
-  background: #171e25;
-  opacity: 0.5;
-  border-bottom: 1px solid #C4CDD5;
-  border-top: 1px solid #C4CDD5;
-}
-
-.btn {
-  color: #FFF;
-  background: none;
-  border: none;
-  padding: 0;
-}
-
-#TOC {
- margin: 71px 0px 20px 0px;
-}
-```
 
 # Intro
 
@@ -258,17 +146,19 @@ Selling 1 BTC to force the pool from 245.7565 to 246.7565 would remove 14.3131 E
 
 In the other direction if you want 5 BTC you would need to provide 73.3537 ETH. This `r 5/73.3537` BTC per ETH a **2.02%** price impact.
 
-## Real World Uniswap v2 Confirmation
+# Real Transaction Confirmation
 
-The 245.7565 WBTC; 3,532 ETH V2 Pool was as of Block 15,562,988. [This transaction](https://etherscan.io/tx/0x1f23e1feb1def28e5b5c7c4800dc66ff8338e114657593d08d9c6891471806d5) shows a trade of 1.3159 ETH for 0.0913 BTC in that block.
+The previous screenshot of the V2 Pool with 245.7565 WBTC and 3,532 ETH was taken as of Ethereum Block 15,562,988. [This transaction](https://etherscan.io/tx/0x1f23e1feb1def28e5b5c7c4800dc66ff8338e114657593d08d9c6891471806d5) shows a trade of 1.3159 ETH for 0.0913 BTC in that block.
 
-The constant product math with `k = 868,012` including the 0.3% fee would expect the following result:
+With `k = 868,012`, a trade of 1.3159 ETH into this pool, including the 0.3% fee, would create this equation:
 
-`( 3532 - (1.3159*0.997) ) * (245.7565 + x) = 868,012`
+`( 3532 - (1.3159*0.997) ) ETH * (245.7565 + x) BTC = 868,012 Liquidity`
 
-Where the expected 0.0913 matches the transaction.
+Solving for x you get this equation:
 
-x = `round(868012/(3532 - 1.3159*0.997) - 245.7565, 4)`
+x = `( 868012/(3532 - 1.3159*0.997) )- 245.7565`
+
+The result 0.0913 BTC matches the transaction!
 
 x = `r round(868012/(3532 - 1.3159*0.997) - 245.7565, 4)`
 
